@@ -1,0 +1,156 @@
+"""MCP WRITE tools (plan 4.2) — the interactive extraction cycle via Claude Code.
+
+The key difference from tools.py: these functions write to the DB (read-write engine),
+whereas tools.py is read-only. The model in the Claude Code subscription reads the PDF with
+its eyes and calls stage_panel; critical values are force-alerted. approve_staged is a
+SEPARATE explicit action (guardrail: the model must not create+approve in one move).
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+
+from core.db import engine
+from core.services import (
+    add_allergy,
+    add_diagnosis,
+    add_food_log,
+    add_medication,
+    approve_staged,
+    get_or_create_user,
+    stage_panel,
+    upsert_profile,
+)
+from core.services import log_from_template as _svc_log_from_template
+from core.services import save_meal_template as _svc_save_meal_template
+from safety.alerts import send_critical_alert
+
+
+def _j(obj) -> str:
+    return json.dumps(obj, default=str, ensure_ascii=False)
+
+
+def set_profile(date_of_birth: str, sex: str, blood_type: str = "",
+                height_cm: float | None = None, emergency_contact: str = "") -> str:
+    """Create/update the profile (date of birth YYYY-MM-DD, sex male/female).
+    Needed for reference ranges, age-gate calculators, the screening calendar."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        upsert_profile(conn, uid, date_of_birth=date_of_birth, sex=sex,
+                       blood_type=blood_type or None, height_cm=height_cm,
+                       emergency_contact=emergency_contact or None)
+    return _j({"ok": True})
+
+
+def record_allergy(allergen: str, reaction: str = "", severity: str = "",
+                   verified: bool = False, allergen_type: str = "") -> str:
+    """Add an allergy (auto-approved). verified=false is still treated as an allergy (fail-safe)."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        aid = add_allergy(conn, uid, allergen, reaction=reaction or None,
+                          severity=severity or None, verified=verified,
+                          allergen_type=allergen_type or None)
+    return _j({"id": aid})
+
+
+def record_diagnosis(diagnosis_name: str, diagnosed_at: str, icd10_code: str = "",
+                     clinical_status: str = "active",
+                     verification_status: str = "confirmed", severity: str = "") -> str:
+    """Add a diagnosis. verification_status: suspected/differential/provisional/confirmed/refuted.
+    Advice is built only on confirmed."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        did = add_diagnosis(conn, uid, diagnosis_name, diagnosed_at=diagnosed_at,
+                            icd10_code=icd10_code or None, clinical_status=clinical_status,
+                            verification_status=verification_status, severity=severity or None)
+    return _j({"id": did})
+
+
+def record_medication(medication_name: str, start_date: str, dose_amount: float | None = None,
+                      dose_unit: str = "", times_per_day: float | None = None,
+                      product_type: str = "prescription", prescribed_for: str = "",
+                      atc_code: str = "") -> str:
+    """Add current medications/supplements. product_type: prescription/otc/supplement/herbal."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        mid = add_medication(conn, uid, medication_name, start_date=start_date,
+                             dose_amount=dose_amount, dose_unit=dose_unit or None,
+                             times_per_day=times_per_day, product_type=product_type,
+                             prescribed_for=prescribed_for or None, atc_code=atc_code or None)
+    return _j({"id": mid})
+
+
+def log_meal(description: str, meal_type: str = "", eaten_at: str = "", portion: str = "",
+             nutrients: dict | None = None, glycemic_index: int | None = None,
+             glycemic_load: float | None = None, symptoms: str = "", wellbeing: str = "",
+             nutrient_source: str = "model_estimate", notes: str = "") -> str:
+    """Log a meal into the diary (auto-approved).
+
+    description — the meal description (required). meal_type: breakfast/lunch/dinner/snack/drink.
+    eaten_at — ISO 'YYYY-MM-DD HH:MM' (default — now).
+    nutrients — a dict {code: amount} per the nutrient_types reference, e.g.
+    {"energy_kcal":350,"protein":12,"carbs":60,"fat":7,"fiber":5,"vitamin_c":8,"iron":2,
+    "sodium":400,"calcium":150,"water":250,...}. The calories+macros+vitamins+minerals estimate
+    is made by the model (including from a photo). glycemic_index (0-100)/glycemic_load — per meal.
+    symptoms/wellbeing — reaction after eating (good/neutral/bloating/pain/nausea/heartburn).
+    Review — query_food; daily norms — query_nutrition. Returns id + unknown_codes (nutrients
+    outside the reference)."""
+    eat = datetime.fromisoformat(eaten_at) if eaten_at else datetime.now()
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        out = add_food_log(conn, uid, description, eaten_at=eat, meal_type=meal_type or None,
+                           portion=portion or None, nutrients=nutrients,
+                           glycemic_index=glycemic_index, glycemic_load=glycemic_load,
+                           symptoms=symptoms or None, wellbeing=wellbeing or None,
+                           nutrient_source=nutrient_source or "model_estimate",
+                           notes=notes or None)
+    return _j(out)
+
+
+def save_meal_template(name: str, meal_type: str = "", description: str = "",
+                       nutrients: dict | None = None, glycemic_index: int | None = None) -> str:
+    """Save a template for a frequent meal (by name). nutrients — {code: amount} per 1 portion.
+    Then logged in one call via log_from_template(name)."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        tid = _svc_save_meal_template(conn, uid, name, meal_type=meal_type or None,
+                                      description=description or None, nutrients=nutrients,
+                                      glycemic_index=glycemic_index)
+    return _j({"id": tid, "name": name})
+
+
+def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = "",
+                      wellbeing: str = "", symptoms: str = "") -> str:
+    """Log a meal from a saved template (nutrients × portion_factor).
+    eaten_at=ISO (default — now). Quick entry of frequent meals in one call."""
+    eat = datetime.fromisoformat(eaten_at) if eaten_at else datetime.now()
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        out = _svc_log_from_template(conn, uid, name, eaten_at=eat,
+                                     portion_factor=portion_factor,
+                                     wellbeing=wellbeing or None, symptoms=symptoms or None)
+    return _j(out)
+
+
+def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
+                    facility: str = "") -> str:
+    """Stage a lab panel extracted from a form (goes in as PENDING for review).
+
+    rows — a list of objects: {"raw_name": "Холестерол загальний", "value": 5.8,
+    "unit": "mmol/L", "ref_min": 0, "ref_max": 5.2}. value_text — for qualitative ('не виявлено').
+    Each row is normalized; critical values are alerted immediately. Unknown names / a failed
+    unit-gate are marked in note. Then show the user the table and wait for an explicit approve_staged."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        out = stage_panel(conn, uid, panel_date, rows, panel_type=panel_type or None,
+                          facility=facility or None, alerter=send_critical_alert)
+    return _j(out)
+
+
+def approve_staged_source(source_id: str) -> str:
+    """Approve a staged panel/source (a SEPARATE explicit action — only on a direct instruction
+    from the user in the current message). Moves pending → approved."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        out = approve_staged(conn, uid, source_id)
+    return _j(out)

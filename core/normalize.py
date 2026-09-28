@@ -1,0 +1,137 @@
+"""Observation normalization — the system's hardest problem (plan 4.4).
+
+Raw name from a lab form → canonical observation type, with strict rules:
+- ONLY an exact match of the normalized string against synonyms (lowercase, trim, ё→е, dashes).
+  Embedding similarity is NOT used here (auto-accept is forbidden; "total protein" and
+  "urine protein" are cosine twins but clinically different universes).
+- Unit gate: no conversion to canonical_unit → mapping is forbidden even with an exact
+  name match ("glucose 95" without a unit / with an unknown unit is not mapped).
+- Unknown name → unknown_type=True (the pipeline asks the user, it does not guess).
+
+Unit conversion is analyte-specific (canonical = value*factor + add_offset).
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from sqlalchemy import text
+
+_DASHES = dict.fromkeys(map(ord, "–—−‒―"), "-")
+_WS = re.compile(r"\s+")
+
+
+def canonicalize(name: str) -> str:
+    """lowercase + ё→е + dash unification + whitespace collapse + trim."""
+    s = name.replace("ё", "е").replace("Ё", "е")
+    s = s.translate(_DASHES)
+    s = _WS.sub(" ", s).strip().lower()
+    return s
+
+
+@dataclass
+class NormResult:
+    raw_name: str
+    type_id: int | None
+    type_code: str | None
+    canonical_unit: str | None
+    value_canonical: float | None
+    matched_synonym: str | None
+    synonym_origin: str | None          # 'seed' | 'learned'
+    unknown_type: bool
+    conversion_missing: bool            # unit gate triggered (mapping forbidden)
+
+    @property
+    def ok(self) -> bool:
+        return not self.unknown_type and not self.conversion_missing
+
+
+def find_type(raw_name: str, conn) -> dict | None:
+    """Exact match of the canonicalized string against observation_synonyms."""
+    canon = canonicalize(raw_name)
+    row = conn.execute(
+        text(
+            """
+            SELECT ot.id AS type_id, ot.code, ot.canonical_unit, s.synonym, s.origin
+            FROM observation_synonyms s
+            JOIN observation_types ot ON ot.id = s.type_id
+            WHERE translate(lower(s.synonym), 'ё', 'е') = :canon
+            ORDER BY (s.origin = 'seed') DESC   -- seed takes priority over learned
+            LIMIT 1
+            """
+        ),
+        {"canon": canon},
+    ).mappings().first()
+    return dict(row) if row else None
+
+
+def convert_to_canonical(
+    type_id: int, value: float, from_unit: str, canonical_unit: str, conn
+) -> float | None:
+    """value in from_unit → canonical unit. None = no conversion (unit gate)."""
+    if from_unit == canonical_unit:
+        return value
+    row = conn.execute(
+        text(
+            """
+            SELECT factor, add_offset FROM unit_conversions
+            WHERE from_unit = :from_u AND to_unit = :to_u
+              AND (type_id = :tid OR type_id IS NULL)
+            ORDER BY (type_id IS NOT NULL) DESC   -- analyte-specific takes priority over universal
+            LIMIT 1
+            """
+        ),
+        {"from_u": from_unit, "to_u": canonical_unit, "tid": type_id},
+    ).first()
+    if row is None:
+        return None
+    factor, offset = float(row[0]), float(row[1] or 0.0)
+    return value * factor + offset
+
+
+def normalize(raw_name: str, value: float | None, unit: str | None, conn) -> NormResult:
+    """Full pass: name → type; value+unit → canonical (with the unit gate)."""
+    t = find_type(raw_name, conn)
+    if t is None:
+        return NormResult(raw_name, None, None, None, None, None, None,
+                          unknown_type=True, conversion_missing=False)
+
+    canonical_unit = t["canonical_unit"]
+    value_canonical: float | None = None
+    conversion_missing = False
+
+    if value is not None and canonical_unit is not None:
+        if unit is None:
+            conversion_missing = True            # no unit → the value cannot be mapped
+        else:
+            value_canonical = convert_to_canonical(t["type_id"], value, unit, canonical_unit, conn)
+            if value_canonical is None:
+                conversion_missing = True
+
+    return NormResult(
+        raw_name=raw_name,
+        type_id=t["type_id"],
+        type_code=t["code"],
+        canonical_unit=canonical_unit,
+        value_canonical=value_canonical,
+        matched_synonym=t["synonym"],
+        synonym_origin=t["origin"],
+        unknown_type=False,
+        conversion_missing=conversion_missing,
+    )
+
+
+def compute_status(
+    value: float | None, ref_min: float | None, ref_max: float | None
+) -> str | None:
+    """status from the range ON THE FORM (plan 3.1): value and ref are in the same unit by construction.
+
+    normal/high/low. None if there is no value or no bound at all.
+    """
+    if value is None or (ref_min is None and ref_max is None):
+        return None
+    if ref_max is not None and value > ref_max:
+        return "high"
+    if ref_min is not None and value < ref_min:
+        return "low"
+    return "normal"

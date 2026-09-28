@@ -1,0 +1,69 @@
+"""MCP tool tests. tools.py reads through separate connections (like the real MCP),
+so committed data is needed — we clean up in finally."""
+import json
+
+import pytest
+from sqlalchemy import text
+
+from core.db import engine
+from core.services import get_or_create_user, ingest_observation
+from mcp_server import tools
+
+pytestmark = pytest.mark.integration  # hits the DB via `engine` / MCP tools directly
+
+
+def test_sql_query_rejects_writes():
+    assert "error" in json.loads(tools.sql_query("UPDATE observations SET status='x'"))
+    assert "error" in json.loads(tools.sql_query("DELETE FROM users"))
+    assert "error" in json.loads(tools.sql_query("DROP TABLE users"))
+
+
+def test_sql_query_allows_select():
+    out = json.loads(tools.sql_query("SELECT 1 AS one"))
+    assert out["rows"][0]["one"] == 1
+
+
+def test_sql_query_is_read_only_at_db_level():
+    # even if the keyword filter let it through — the READ ONLY transaction blocks the write
+    out = json.loads(tools.sql_query(
+        "WITH x AS (SELECT 1) INSERT INTO users DEFAULT VALUES"
+    ))
+    assert "error" in out  # rejected (doesn't start with select, or read-only)
+
+
+def test_query_observations_roundtrip():
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        res = ingest_observation(conn, uid, "глюкоза", 5.2, "mmol/L",
+                                 ref_min=3.9, ref_max=5.5)
+        oid = res.observation_id
+        sid = conn.execute(
+            text("SELECT source_id FROM observations WHERE id=:i"), {"i": oid}
+        ).scalar()
+    try:
+        out = json.loads(tools.query_observations("glucose", days=30))
+        assert any(float(r["value_canonical"]) == 5.2 for r in out["rows"])
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM observations WHERE id=:i"), {"i": oid})
+            conn.execute(text("DELETE FROM ingestion_sources WHERE id=:i"), {"i": sid})
+
+
+def test_pending_not_in_approved_view():
+    """A critical value (pending) must NOT leak into v_observations."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        res = ingest_observation(conn, uid, "калій", 6.8, "mmol/L")  # critical → pending
+        oid = res.observation_id
+        sid = conn.execute(
+            text("SELECT source_id FROM observations WHERE id=:i"), {"i": oid}
+        ).scalar()
+    try:
+        approved = json.loads(tools.query_observations("potassium", days=30))
+        assert all(float(r["value_canonical"]) != 6.8 for r in approved["rows"])
+        pending = json.loads(tools.list_pending_reviews())
+        assert any(str(r["id"]) == oid for r in pending)
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM observations WHERE id=:i"), {"i": oid})
+            conn.execute(text("DELETE FROM ingestion_sources WHERE id=:i"), {"i": sid})

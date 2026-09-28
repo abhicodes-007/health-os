@@ -1,0 +1,35 @@
+# Приватні дані — НІКОЛИ в git
+data/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.dcm
+*.heic
+*.zip
+*.csv
+*.log
+export*.xml
+apple_health_export/
+
+# Секрети
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-embed/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS
+.DS_Store
+
+# Local tooling
+.claude/
