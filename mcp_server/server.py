@@ -5,7 +5,8 @@ Here — only tool registration + descriptions (with a DDL excerpt for sql_query
 JOIN observations↔observation_types is the main place the model makes mistakes).
 
 Run (stdio):  uv run python -m mcp_server.server
-Connecting in Claude Desktop/Code — via an mcp config pointing to this command.
+Connecting any MCP client (Claude Desktop/Code, LM Studio, Open WebUI via mcpo, …) — via an
+mcp config pointing to this command.
 """
 from __future__ import annotations
 

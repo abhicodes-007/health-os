@@ -1,7 +1,7 @@
 """Critical-alert delivery channel (plan 4.5, v3).
 
 Exists from Phase 1, not Phase 4: otherwise the most important safety net spends ~3 months
-pushing "into the void" (MCP is pull-only, Claude doesn't initiate a conversation). A minimal
+pushing "into the void" (MCP is pull-only, the client never initiates a conversation). A minimal
 always-on channel:
   1) the log file data/alerts.log — always (zero dependencies, never crashes);
   2) macOS notification (osascript) — locally;

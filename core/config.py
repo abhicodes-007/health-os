@@ -1,7 +1,7 @@
 """Application config — read from .env (pydantic-settings).
 
 .env is looked up by ABSOLUTE path (project root), not relative to cwd — so that the MCP
-server, launched by Claude Code/Desktop from an arbitrary directory, picks up the right
+server, launched by an MCP client from an arbitrary directory, picks up the right
 password and port.
 """
 from __future__ import annotations

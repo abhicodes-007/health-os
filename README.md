@@ -2,9 +2,11 @@
 
 [![tests](https://github.com/andronaft/health-os/actions/workflows/tests.yml/badge.svg)](https://github.com/andronaft/health-os/actions/workflows/tests.yml)
 
-Personal AI health system: a self-hosted store for your medical data (labs, diagnoses,
-medications, device data, food log) with deterministic safety checks and a Claude MCP interface.
-The design plan and personal documents are kept privately, outside this repository.
+**Local-first personal health record, exposed over [MCP](https://modelcontextprotocol.io).**
+Your labs, diagnoses, medications, wearable data and food log live in your own Postgres; any
+MCP client — a local model in LM Studio / Open WebUI / Ollama, or a cloud assistant — can read
+and update them through guarded tools. Critical values, drug-safety rules and screening
+schedules are deterministic code, not LLM judgement.
 
 > **Medical disclaimer.** This is not a medical device and does not give medical advice.
 > Critical-value alerts and screening reminders are only a signal to contact a doctor —
@@ -65,11 +67,18 @@ Integration tests never touch the working database: `tests/conftest.py` drops an
 Override with `TEST_DATABASE_URL` (the database name must end in `_test`).
 If Postgres is down, integration tests are skipped; unit tests still run.
 
-## Privacy
+## Privacy / local-first
 
-- `data/` and `.env` — outside git (see `.gitignore`).
-- FileVault is mandatory (otherwise PHI is on disk in plaintext).
-- Real medical data to Anthropic — only via the API with commercial/ZDR terms.
+- **Your data stays in your own database.** Postgres runs locally in Docker; `data/` and `.env`
+  are outside git. Nothing is sent anywhere by health-os itself.
+- **What leaves the machine depends on the MCP client you connect.** With a local model
+  (LM Studio, Open WebUI + Ollama, …) nothing does. With a cloud assistant, whatever the tools
+  return is sent to that provider — use one whose terms fit medical data (no training on your
+  data, zero/short retention).
+- **The goal is fully local:** local models for chat and extraction, local embeddings for search
+  (already supported via fastembed). Cloud clients remain optional.
+- Optional alert channel (Telegram) sends only a generic "check your health system" text, never values.
+- Encrypt the disk (FileVault / LUKS / BitLocker) — the database files are plaintext at rest.
 - Never put real medical data in issues, PRs or tests — synthetic data only.
 
 ## License

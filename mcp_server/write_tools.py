@@ -1,7 +1,7 @@
-"""MCP WRITE tools (plan 4.2) — the interactive extraction cycle via Claude Code.
+"""MCP WRITE tools (plan 4.2) — the interactive extraction cycle via an MCP client.
 
 The key difference from tools.py: these functions write to the DB (read-write engine),
-whereas tools.py is read-only. The model in the Claude Code subscription reads the PDF with
+whereas tools.py is read-only. The model in the MCP client reads the PDF with
 its eyes and calls stage_panel; critical values are force-alerted. approve_staged is a
 SEPARATE explicit action (guardrail: the model must not create+approve in one move).
 """

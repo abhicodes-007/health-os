@@ -1,6 +1,8 @@
-# Health OS MCP server
+# health-os MCP server
 
-Gives Claude Desktop/Code read-only access to the database through approved views.
+Exposes your health database to **any MCP client**: local-model apps (LM Studio, Open WebUI,
+terminal clients for Ollama) or cloud assistants (Claude Desktop/Code, etc.).
+Reads go through approved views only; writes are separate tools with explicit guardrails.
 
 ## Run
 
@@ -9,10 +11,10 @@ cd health-os
 .venv/bin/python -m mcp_server.server   # stdio transport
 ```
 
-## Connecting to Claude Desktop
+## Connecting a client
 
-In `~/Library/Application Support/Claude/claude_desktop_config.json` (replace
-`${PROJECT_ROOT}` with the absolute path to your `health-os` checkout):
+Most MCP clients use the same `mcpServers` JSON. Replace `${PROJECT_ROOT}` with the absolute
+path to your `health-os` checkout:
 
 ```json
 {
@@ -26,19 +28,54 @@ In `~/Library/Application Support/Claude/claude_desktop_config.json` (replace
 }
 ```
 
-After this, the chat understands prompts like "show the health summary", "cholesterol
-trend over 2 years", "what is pending review", "what are the active diagnoses".
+Where that JSON goes:
+
+| Client | Runs the model | Config |
+|---|---|---|
+| **LM Studio** | locally | Program → Install → Edit `mcp.json` |
+| **Open WebUI** (+ Ollama) | locally | stdio servers go through [mcpo](https://github.com/open-webui/mcpo): `uvx mcpo --port 8000 -- .venv/bin/python -m mcp_server.server`, then add `http://localhost:8000` as a tool server in Settings → Tools |
+| **Ollama in a terminal** | locally | an MCP-capable CLI such as [ollmcp](https://github.com/jonigl/mcp-client-for-ollama) with the JSON above |
+| **Claude Desktop** | cloud | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Claude Code** | cloud | `claude mcp add health-os -- ${PROJECT_ROOT}/.venv/bin/python -m mcp_server.server` |
+
+With a **local** model, nothing leaves your machine. With a **cloud** model, whatever the tools
+return is sent to that provider — see *Privacy* in the main README.
+
+Local models: pick one with solid tool calling (e.g. Qwen 2.5/3, Llama 3.1+ in 7B+ sizes).
+Small models make more tool-call mistakes — the guardrails below are enforced in code for that reason.
+
+Once connected, the chat understands prompts like "show the health summary", "cholesterol
+trend over 2 years", "what is pending review", "what did I eat this week and what am I short on".
 
 ## Tools
 
+**Read (approved data only)**
+
 | Tool | What it does |
 |---|---|
-| get_health_summary | deterministic summary (profile/allergies/diagnoses/medications/how recent labs are) |
-| query_observations | values of an observation over N days; >90 days → weekly aggregation |
+| get_health_summary | deterministic summary: profile, allergies, diagnoses, medications, how recent labs are |
+| query_observations | values of a marker over N days; >90 days → weekly aggregation |
+| get_trend | marker trend (Mann-Kendall) with significance |
 | get_timeline | chronology of health events |
-| get_medications / get_diagnoses / get_allergies | current entities via approved views |
-| list_pending_reviews | review queue (NOT approved) |
+| get_medications / get_diagnoses / get_allergies | current entities |
+| get_screening_recommendations | age/sex-gated screening calendar |
+| prepare_doctor_visit | summary + recent abnormalities + due screenings + pending queue |
+| get_weekly_report | deterministic weekly report |
+| query_food / query_nutrition / nutrition_report | food log, daily nutrients vs RDA, deficiency/excess analytics |
+| list_meal_templates | saved frequent meals |
+| search | full-text (+ optional semantic) search over document narratives |
+| list_pending_reviews | review queue (NOT approved — never cited as fact) |
 | sql_query | arbitrary READ-ONLY SELECT (read-only tx + 5s timeout, SELECT/WITH only) |
+
+**Write**
+
+| Tool | What it does |
+|---|---|
+| set_profile | date of birth, sex, blood type |
+| record_allergy / record_diagnosis / record_medication | manual entries (with provenance) |
+| log_meal / save_meal_template / log_from_template | food log with a full nutrient profile |
+| stage_lab_panel | stage an extracted lab panel as PENDING (critical values alert immediately) |
+| approve_staged_source | approve a staged panel — only on the user's explicit instruction |
 
 ## Guardrails (in code, not in the prompt)
 

@@ -1,6 +1,6 @@
 """Phase 3 (lean version, 2026-07-16): full-text search over document_chunks WITHOUT embeddings.
 
-Decision: while we work only through Claude Code (no API key and no local embedding
+Decision: while we work only through an interactive MCP client (no API key and no local embedding
 model), the agent itself does the "semantics" on top of a Postgres keyword index.
 The vector column (`embedding vector(N)`) is added by a SEPARATE migration later, once a
 local embedding model is chosen — the `search` tool interface won't change.

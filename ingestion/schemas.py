@@ -1,7 +1,7 @@
 """Extraction contract (plan 4.4) — a Pydantic schema for a multi-entity document.
 
 Real documents are multi-entity: a discharge summary = labs + diagnoses + prescriptions; a photo
-with two forms. The extractor (an LLM under the Claude Code subscription OR the Batch API in
+with two forms. The extractor (an LLM in an interactive MCP client OR a batch API in
 Phase 2) returns EXACTLY this structure — structured output, no tools (injection is caught by
 review, it won't drive the agent).
 

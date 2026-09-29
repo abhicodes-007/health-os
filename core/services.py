@@ -1,6 +1,6 @@
 """Core services: manual entity entry + ingestion of a single observation.
 
-Manual entry (profile/allergies/diagnoses/medications via a Claude dialog) is auto-approved,
+Manual entry (profile/allergies/diagnoses/medications via a chat with any MCP client) is auto-approved,
 but with provenance (channel='manual'). Observations go through normalization,
 status computation from the form, and the deterministic critical-value rule-engine (plan 4.5).
 """
