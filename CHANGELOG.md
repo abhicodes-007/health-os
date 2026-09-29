@@ -6,7 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added
+- MCP server instructions: the safety rules (`prompts/system_prompt.py`) are sent to every client
+  on connect and exposed as the `health_assistant` prompt.
+- `check_medication_safety` tool: interaction refusal + total daily paracetamol + biotin checks.
+- `crisis_resources` tool: the fixed crisis response, now reachable from any MCP client.
+
 ### Fixed
+- The safety layer described in the README was not reachable over MCP: the system prompt was
+  never sent and the crisis/medication checks had no tools.
 - Demo MCP config uses `docker run -i --rm` instead of `docker compose run`, which left a
   running container behind after every client session.
 

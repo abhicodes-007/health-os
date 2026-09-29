@@ -67,3 +67,18 @@ def test_pending_not_in_approved_view():
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM observations WHERE id=:i"), {"i": oid})
             conn.execute(text("DELETE FROM ingestion_sources WHERE id=:i"), {"i": sid})
+
+
+def test_crisis_resources_tool():
+    out = json.loads(tools.crisis_resources("I want to die"))
+    assert out["detected_by_keywords"] is True
+    assert "112" in out["response"]
+    # always returns the resources, even if keywords don't match (false positive > miss)
+    assert "112" in json.loads(tools.crisis_resources("I feel off"))["response"]
+
+
+def test_check_medication_safety_tool():
+    out = json.loads(tools.check_medication_safety(
+        paracetamol_products=[{"name": "Paracetamol", "mg_per_dose": 1000, "doses_per_day": 5}]))
+    assert out["paracetamol"]["level"] == "exceeded"
+    assert "interactions" in out

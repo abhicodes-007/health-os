@@ -13,8 +13,11 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from mcp_server import tools, write_tools
+from prompts.system_prompt import SYSTEM_PROMPT
 
-mcp = FastMCP("health-os")
+# Server instructions: MCP clients that support them put the safety rules into the model's
+# context. The same text is also exposed as the `health_assistant` prompt below.
+mcp = FastMCP("health-os", instructions=SYSTEM_PROMPT)
 
 # Compact DDL excerpt of the approved views to hint the model in sql_query.
 _SCHEMA_HINT = """
@@ -152,6 +155,33 @@ def sql_query(sql: str) -> str:
     Schema and examples:
     """ + "\n" + _SCHEMA_HINT
     return tools.sql_query(sql)
+
+
+# ---------------------------------------------------------------- SAFETY tools
+@mcp.tool()
+def check_medication_safety(paracetamol_products: list[dict] | None = None,
+                            taking_biotin: bool | None = None,
+                            planned_tests: list[str] | None = None) -> str:
+    """Call for ANY question about medications: "can I take X", combining drugs, doses.
+    Returns the standard refusal to assess interactions (a doctor/pharmacist must check) plus
+    deterministic checks: total daily paracetamol across products and biotin interference with
+    lab tests. paracetamol_products: [{name, mg_per_dose, doses_per_day}] — include combination
+    cold/flu remedies; if omitted, current medications are used. planned_tests: marker codes
+    (e.g. ["tsh", "ferritin"])."""
+    return tools.check_medication_safety(paracetamol_products, taking_biotin, planned_tests)
+
+
+@mcp.tool()
+def crisis_resources(message: str = "") -> str:
+    """Call IMMEDIATELY on any sign of crisis, suicidal thoughts or self-harm. Returns a fixed
+    response with hotlines and the user's trusted contact. Reply with it as is — no analytics."""
+    return tools.crisis_resources(message)
+
+
+@mcp.prompt()
+def health_assistant() -> str:
+    """Safety rules for an assistant working with this health record."""
+    return SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------- WRITE tools

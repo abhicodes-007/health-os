@@ -366,6 +366,86 @@ def get_weekly_report() -> str:
         return json.dumps(_wr(conn, uid), default=str, ensure_ascii=False)
 
 
+# ---------------------------------------------------------------- safety tools
+_PARACETAMOL_NAMES = ("paracetamol", "парацетамол", "acetaminophen", "ацетамінофен", "ацетаминофен")
+_BIOTIN_NAMES = ("biotin", "біотин", "биотин", "vitamin b7", "вітамін b7")
+
+
+def medication_safety(current_meds: list[dict], paracetamol_products: list[dict] | None = None,
+                      taking_biotin: bool | None = None,
+                      planned_tests: list[str] | None = None) -> dict:
+    """Deterministic medication checks (pure; the MCP wrapper supplies current_meds).
+
+    Interactions are always refused — the LLM is not an interaction engine. What CAN be computed:
+    the total daily paracetamol across products and biotin interference with immunoassays.
+    Products not passed explicitly are taken from the current medication list.
+    """
+    from safety.interactions import (
+        _BIOTIN_AFFECTED,
+        biotin_interference_warning,
+        check_paracetamol_load,
+        refuse_interaction_query,
+    )
+
+    def _has(med: dict, names: tuple[str, ...]) -> bool:
+        return any(n in (med.get("medication_name") or "").lower() for n in names)
+
+    out: dict = {"interactions": refuse_interaction_query()}
+
+    source = "provided"
+    if paracetamol_products is None:
+        source = "current_medications"
+        paracetamol_products = [
+            {"name": m["medication_name"], "mg_per_dose": m.get("dose_amount"),
+             "doses_per_day": m.get("times_per_day")}
+            for m in current_meds
+            if _has(m, _PARACETAMOL_NAMES) and (m.get("dose_unit") or "").lower() == "mg"
+        ]
+    if paracetamol_products:
+        load = check_paracetamol_load(paracetamol_products)
+        out["paracetamol"] = {"source": source, "total_mg_per_day": round(load.total_mg_per_day),
+                              "level": load.level, "message": load.message}
+        if source == "current_medications":
+            out["paracetamol"]["note"] = ("Combination products (cold/flu remedies) may contain "
+                                          "paracetamol under another name — ask the user and pass "
+                                          "them in paracetamol_products.")
+
+    if taking_biotin is None:
+        taking_biotin = any(_has(m, _BIOTIN_NAMES) for m in current_meds)
+    warning = biotin_interference_warning(taking_biotin, planned_tests or sorted(_BIOTIN_AFFECTED))
+    if warning:
+        out["biotin"] = warning
+    return out
+
+
+def check_medication_safety(paracetamol_products: list[dict] | None = None,
+                            taking_biotin: bool | None = None,
+                            planned_tests: list[str] | None = None) -> str:
+    with engine.connect() as conn:
+        uid = _user_id(conn)
+        meds = [dict(r) for r in conn.execute(
+            text("""SELECT medication_name, dose_amount, dose_unit, times_per_day
+                    FROM v_medications_current WHERE user_id=:u"""), {"u": uid},
+        ).mappings()] if uid else []
+    return json.dumps(medication_safety(meds, paracetamol_products, taking_biotin, planned_tests),
+                      default=str, ensure_ascii=False)
+
+
+def crisis_resources(message: str = "") -> str:
+    """Fixed crisis response (no model judgement, works offline). Includes the user's trusted
+    contact from the profile, if set."""
+    from safety.crisis import crisis_response, is_crisis
+
+    with rw_engine.connect() as conn:  # user_profile is not exposed to the readonly role
+        contact = conn.execute(
+            text("SELECT emergency_contact FROM user_profile LIMIT 1")).scalar()
+    return json.dumps({
+        "detected_by_keywords": is_crisis(message) if message else None,
+        "response": crisis_response(contact),
+        "instruction": "Reply with this response as is. No analytics, no trends, no records.",
+    }, ensure_ascii=False)
+
+
 def sql_query(sql: str) -> str:
     """Arbitrary SELECT over approved-views. Read-only + timeout 5s. Only SELECT/WITH."""
     s = sql.strip().rstrip(";")

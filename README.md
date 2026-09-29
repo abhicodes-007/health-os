@@ -21,13 +21,15 @@ schedules are deterministic code, not LLM judgement.
   *pending*. Nothing counts as fact until you approve it.
 - **Safety net in code** — critical values alert immediately (log, macOS notification,
   optional Telegram); critical findings in narrative reports are flagged; drug-interaction
-  questions are refused and redirected to a doctor/pharmacist (only deterministic checks run,
-  e.g. total daily paracetamol across products); a crisis protocol answers without any LLM.
+  questions are refused and redirected to a doctor/pharmacist (only deterministic checks run:
+  total daily paracetamol across products, biotin before lab tests); a crisis tool returns a
+  fixed response with hotlines, independent of the model.
 - **Trends and analytics** — Mann-Kendall trends, personal baselines and anomalies,
   age-gated risk calculators, a screening calendar, a weekly report, a doctor-visit brief.
 - **Food log** — meals with a 41-nutrient profile, %RDA, deficiency/excess flags, meal templates.
 - **Devices** — Apple Health export and Garmin import.
-- **26 MCP tools** — see [mcp_server/README.md](mcp_server/README.md).
+- **28 MCP tools + server instructions** — the safety rules are sent to every client on connect;
+  see [mcp_server/README.md](mcp_server/README.md).
 
 ## Try it in one command
 
