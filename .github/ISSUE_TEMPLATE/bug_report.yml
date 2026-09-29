@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Do not paste real medical data** — no lab values, names, dates of birth, documents or
+        screenshots of your records. Reproduce with the demo patient (`python -m seed.demo`) or
+        made-up values. Security problems → [report privately](https://github.com/andronaft/health-os/security/advisories/new).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. python -m seed.demo
+        2. call get_trend("ldl")
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and model
+      placeholder: e.g. LM Studio + qwen3-8b, Claude Desktop
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: OS, Python version, commit
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report contains no real medical data.
+          required: true
