@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project are documented here.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/)
+(pre-1.0: minor versions may break the schema or tool interfaces).
+
+## [Unreleased]
+
+## [0.1.0] — 2026-09-29
+
+First public release.
+
+### Added
+- **MCP server with 26 tools** — health summary, observations and trends (Mann-Kendall),
+  timeline, medications/diagnoses/allergies, screening calendar, doctor-visit brief, weekly
+  report, food log and nutrition analytics, document search, read-only SQL; write tools for the
+  profile, manual entries, meals and meal templates, and lab panels (stage → explicit approve).
+- **Deterministic safety layer** — critical-value rules with alerts (log, macOS notification,
+  optional generic Telegram), critical findings in narrative reports, drug-interaction refusal
+  with paracetamol-total and biotin checks, crisis protocol independent of any model.
+- **Data model** — PostgreSQL 16 + pgvector schema (Alembic), approved views and a separate
+  read-only role, normalization of marker names (uk/ru/en/Latin) and units, qualitative values,
+  logical panel dedup, extraction confidence scoring.
+- **Food log** — 41 nutrients with %RDA and deficiency/excess flags, meal templates,
+  food ↔ wellbeing association.
+- **Importers** — Apple Health export, Garmin.
+- **Analytics** — baselines and anomalies, age-gated risk calculators, screening calendar.
+- **One-command demo** — `demo/docker-compose.yml` with a fictional patient; Dockerfile for the
+  MCP server.
+- Backups with restic + launchd restore test; red-team eval scenarios.
+- CI: tests on Python 3.12/3.13 against Postgres, ruff, gitleaks; Dependabot; locked dependencies.
+
+### Fixed
+- Pinned `mcp<2`: the 2.x SDK removed `FastMCP` and the server failed to start on fresh installs.
+- Limit-only nutrients (sugar, added sugar, saturated fat, cholesterol, sodium) are no longer
+  reported as deficient when intake is low.
+
+### Security
+- Postgres and Open WebUI ports bound to `127.0.0.1` by default.
+- Private vulnerability reporting — see [SECURITY.md](SECURITY.md).
+
+[Unreleased]: https://github.com/andronaft/health-os/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/andronaft/health-os/releases/tag/v0.1.0

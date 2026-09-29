@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="880" height="560" viewBox="0 0 880 560" role="img" aria-label="Example MCP session with the health-os demo patient">
+  <style>
+    .ui { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .t { font-size: 14px; fill: #e6edf3; }
+    .muted { font-size: 12px; fill: #8b949e; }
+    .call { font-size: 12.5px; fill: #7ee787; }
+    .res { font-size: 12.5px; fill: #c9d1d9; white-space: pre; }
+    .warn { font-size: 12.5px; fill: #f0b72f; }
+  </style>
+  <rect width="880" height="560" rx="14" fill="#0d1117"/>
+  <rect x="0.5" y="0.5" width="879" height="559" rx="14" fill="none" stroke="#30363d"/>
+  <circle cx="24" cy="22" r="6" fill="#ff5f57"/><circle cx="44" cy="22" r="6" fill="#febc2e"/><circle cx="64" cy="22" r="6" fill="#28c840"/>
+  <text x="440" y="27" text-anchor="middle" class="ui muted">local model · MCP client · health-os demo patient (fictional)</text>
+  <line x1="0" y1="44" x2="880" y2="44" stroke="#30363d"/>
+
+  <!-- turn 1 -->
+  <rect x="520" y="62" width="340" height="36" rx="10" fill="#1f6feb"/>
+  <text x="538" y="85" class="ui t">Is my LDL trending up?</text>
+
+  <rect x="20" y="112" width="760" height="62" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="36" y="134" class="mono call">▸ get_trend(type_code="ldl")</text>
+  <text x="36" y="156" class="mono res">{"direction": "increasing", "detail": "Mann-Kendall z=+2.20, p≈0.027, n=5"}</text>
+
+  <text x="20" y="200" class="ui t">Yes. Across your last 5 panels LDL rose steadily from 2.9 to 3.8 mmol/L,</text>
+  <text x="20" y="222" class="ui t">and the trend is statistically significant (p ≈ 0.03). Your hypercholesterolemia</text>
+  <text x="20" y="244" class="ui t">diagnosis is still marked <tspan font-style="italic">suspected</tspan> — worth discussing with your doctor.</text>
+
+  <!-- turn 2 -->
+  <rect x="560" y="272" width="300" height="36" rx="10" fill="#1f6feb"/>
+  <text x="578" y="295" class="ui t">Anything waiting for me?</text>
+
+  <rect x="20" y="322" width="760" height="84" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="36" y="344" class="mono call">▸ list_pending_reviews()</text>
+  <text x="36" y="366" class="mono res">vitamin_d  27 ng/mL  status=low     <tspan class="warn">PENDING — unverified, do not cite as fact</tspan></text>
+  <text x="36" y="388" class="mono res">ferritin   35 ng/mL  status=normal  <tspan class="warn">PENDING — unverified, do not cite as fact</tspan></text>
+
+  <text x="20" y="432" class="ui t">One lab panel from 3 days ago is staged but not approved yet: vitamin D and</text>
+  <text x="20" y="454" class="ui t">ferritin. Check them against the original report — say "approve" and I'll add them</text>
+  <text x="20" y="476" class="ui t">to your record. Until then I won't treat these values as facts.</text>
+
+  <line x1="0" y1="510" x2="880" y2="510" stroke="#30363d"/>
+  <text x="20" y="536" class="ui muted">Tool calls and results are real output of the demo database; the assistant's wording is illustrative.</text>
+</svg>

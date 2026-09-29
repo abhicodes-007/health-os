@@ -8,6 +8,8 @@ MCP client — a local model in LM Studio / Open WebUI / Ollama, or a cloud assi
 and update them through guarded tools. Critical values, drug-safety rules and screening
 schedules are deterministic code, not LLM judgement.
 
+<p align="center"><img src="docs/demo.svg" alt="An MCP session with the demo patient: LDL trend and the pending-review queue" width="820"></p>
+
 > **Medical disclaimer.** This is not a medical device and does not give medical advice.
 > Critical-value alerts and screening reminders are only a signal to contact a doctor —
 > never a diagnosis and never a reason to delay care. Use at your own risk.
