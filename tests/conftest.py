@@ -8,7 +8,7 @@ Tests that need the DB carry the `integration` marker: added automatically for a
 uses the `conn`/`user_id` fixtures, and set via `pytestmark` in modules that hit `engine`
 directly. Everything else is a pure unit test and never connects to Postgres.
 `pytest -m "not integration"` skips DB setup entirely; if the DB is unavailable, integration
-tests are skipped (not failed).
+tests are skipped (not failed) — unless REQUIRE_DB is set (CI), then it is an error.
 """
 from __future__ import annotations
 
@@ -78,6 +78,8 @@ def _test_db(request):
             c.execute(text(f'DROP DATABASE IF EXISTS "{_TEST_URL.database}" WITH (FORCE)'))
             c.execute(text(f'CREATE DATABASE "{_TEST_URL.database}"'))
     except OperationalError:
+        if os.environ.get("REQUIRE_DB"):
+            raise  # CI: a missing DB is a failure, not a silent skip
         _db_down = True  # `_require_seed` will skip integration tests
         yield
         return

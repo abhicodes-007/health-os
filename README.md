@@ -1,5 +1,7 @@
 # health-os
 
+[![tests](https://github.com/andronaft/health-os/actions/workflows/tests.yml/badge.svg)](https://github.com/andronaft/health-os/actions/workflows/tests.yml)
+
 Personal AI health system: a self-hosted store for your medical data (labs, diagnoses,
 medications, device data, food log) with deterministic safety checks and a Claude MCP interface.
 The design plan and personal documents are kept privately, outside this repository.
