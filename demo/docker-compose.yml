@@ -1,0 +1,52 @@
+# One-command demo: a throwaway database with a fictional patient + the MCP server image.
+#
+#   cd demo
+#   docker compose up -d --build     # db + migrations + demo data
+#   docker compose run --rm -T mcp   # what your MCP client runs
+#   docker compose down -v           # remove everything
+#
+# Lives in its own directory → its own compose project and volume: it never touches a real
+# health-os database.
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://health:demo@db:5432/health_os
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: demo  # demo-only; the port is not published
+      POSTGRES_DB: health_os
+    volumes:
+      - demo-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health_os"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  init:
+    build: ..
+    image: health-os:local
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    # idempotent: re-running `up` keeps the existing demo data
+    command: >
+      sh -c "alembic upgrade head && python -m seed.load &&
+             (python -m seed.demo || echo 'demo data already loaded')"
+    restart: "no"
+
+  mcp:
+    image: health-os:local
+    environment: *app-env
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    stdin_open: true
+    profiles: [mcp]  # not started by `up`; the MCP client launches it with `run`
+
+volumes:
+  demo-pg:

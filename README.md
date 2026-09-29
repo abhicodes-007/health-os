@@ -27,7 +27,33 @@ schedules are deterministic code, not LLM judgement.
 - **Devices** — Apple Health export and Garmin import.
 - **26 MCP tools** — see [mcp_server/README.md](mcp_server/README.md).
 
-## Quick start
+## Try it in one command
+
+Only Docker needed. Starts a throwaway database with a fictional patient — two years of labs
+(LDL creeping up), blood pressure, medications, a food log and a lab panel awaiting approval:
+
+```bash
+git clone https://github.com/andronaft/health-os && cd health-os/demo
+docker compose up -d --build
+```
+
+Point your MCP client at it (use the absolute path to `demo/docker-compose.yml`):
+
+```json
+{
+  "mcpServers": {
+    "health-os-demo": {
+      "command": "docker",
+      "args": ["compose", "-f", "/path/to/health-os/demo/docker-compose.yml", "run", "--rm", "-T", "mcp"]
+    }
+  }
+}
+```
+
+Ask *"show my health summary"*, *"is my LDL trending up?"*, *"what's pending review?"*,
+*"what am I short on nutritionally?"*. Remove it all with `docker compose down -v`.
+
+## Install for your own data
 
 Requires Docker and Python 3.12+.
 

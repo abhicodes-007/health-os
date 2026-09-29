@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+data/
+.venv/
+.venv-embed/
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/
+.coverage
+**/__pycache__/
+.DS_Store
+.claude/
