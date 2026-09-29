@@ -156,10 +156,10 @@ OBSERVATION_TYPES = [
 # ---- synonyms: code -> [(synonym, lang)] --------------------------------------------
 # Half of Ukrainian forms before ~2022 were in Russian; so ru is mandatory.
 SYNONYMS = {
-    "hemoglobin": [("гемоглобін", "uk"), ("гемоглобин", "ru"), ("hemoglobin", "en"), ("hb", "en"), ("hgb", "en"), ("hgb", "la")],
+    "hemoglobin": [("гемоглобін", "uk"), ("гемоглобин", "ru"), ("hemoglobin", "en"), ("hb", "en"), ("hgb", "en"), ("hgb", "la"), ("hemoglobina", "es")],
     "erythrocytes": [("еритроцити", "uk"), ("эритроциты", "ru"), ("rbc", "en"), ("erythrocytes", "en")],
     "leukocytes": [("лейкоцити", "uk"), ("лейкоциты", "ru"), ("wbc", "en"), ("leukocytes", "en")],
-    "platelets": [("тромбоцити", "uk"), ("тромбоциты", "ru"), ("plt", "en"), ("platelets", "en")],
+    "platelets": [("тромбоцити", "uk"), ("тромбоциты", "ru"), ("plt", "en"), ("platelets", "en"), ("plaquetas", "es")],
     "hematocrit": [("гематокрит", "uk"), ("гематокрит", "ru"), ("hct", "en"), ("hematocrit", "en")],
     "mcv": [("mcv", "en"), ("середній об'єм еритроцита", "uk")],
     "mch": [("mch", "en")],
@@ -170,7 +170,7 @@ SYNONYMS = {
     "monocytes_pct": [("моноцити", "uk"), ("моноциты", "ru"), ("monocytes", "en")],
     "eosinophils_pct": [("еозинофіли", "uk"), ("эозинофилы", "ru"), ("eosinophils", "en")],
     "basophils_pct": [("базофіли", "uk"), ("базофилы", "ru"), ("basophils", "en")],
-    "glucose": [("глюкоза", "uk"), ("глюкоза", "ru"), ("glucose", "en"), ("глюкоза крові", "uk")],
+    "glucose": [("глюкоза", "uk"), ("глюкоза", "ru"), ("glucose", "en"), ("глюкоза крові", "uk"), ("glucosa", "es"), ("glu", "en")],
     "creatinine": [("креатинін", "uk"), ("креатинин", "ru"), ("creatinine", "en")],
     "urea": [("сечовина", "uk"), ("мочевина", "ru"), ("urea", "en")],
     "uric_acid": [("сечова кислота", "uk"), ("мочевая кислота", "ru"), ("uric acid", "en")],
@@ -181,9 +181,9 @@ SYNONYMS = {
     "total_bilirubin": [("білірубін загальний", "uk"), ("билирубин общий", "ru"), ("total bilirubin", "en")],
     "total_protein_serum": [("білок загальний", "uk"), ("общий белок", "ru"), ("total protein", "en")],
     "albumin": [("альбумін", "uk"), ("альбумин", "ru"), ("albumin", "en")],
-    "potassium": [("калій", "uk"), ("калий", "ru"), ("potassium", "en"), ("k+", "la")],
-    "sodium": [("натрій", "uk"), ("натрий", "ru"), ("sodium", "en"), ("na+", "la")],
-    "calcium_total": [("кальцій", "uk"), ("кальций", "ru"), ("calcium", "en"), ("ca", "la")],
+    "potassium": [("калій", "uk"), ("калий", "ru"), ("potassium", "en"), ("k+", "la"), ("k", "la"), ("potasio", "es")],
+    "sodium": [("натрій", "uk"), ("натрий", "ru"), ("sodium", "en"), ("na+", "la"), ("sodio", "es")],
+    "calcium_total": [("кальцій", "uk"), ("кальций", "ru"), ("calcium", "en"), ("ca", "la"), ("calcio", "es")],
     "crp": [("с-реактивний білок", "uk"), ("с-реактивный белок", "ru"), ("crp", "en"), ("срб", "ru")],
     "iron_serum": [("залізо", "uk"), ("железо", "ru"), ("iron", "en"), ("fe", "la")],
     "ferritin": [("феритин", "uk"), ("ферритин", "ru"), ("ferritin", "en")],
@@ -255,6 +255,18 @@ UNIT_CONVERSIONS = [
     # universal. Formula: canonical = value * factor + add_offset
     (None, "degF", "Cel", 0.555556, -17.777778),  # (F-32)*5/9 = F*5/9 - 17.78
     (None, "g", "kg", 0.001, 0.0),
+    (None, "uIU/mL", "mIU/L", 1.0, 0.0),   # мкМО/мл = mIU/L (TSH on Ukrainian forms)
+    (None, "ug/L", "ng/mL", 1.0, 0.0),
+    # cell counts as printed on ES/US forms: 1/µL = 10^6/L; 10^3/µL = 10^9/L; 10^6/µL = 10^12/L
+    (None, "/uL", "10*9/L", 0.001, 0.0),
+    (None, "10*3/uL", "10*9/L", 1.0, 0.0),
+    (None, "10*6/uL", "10*12/L", 1.0, 0.0),
+    # analytes with critical thresholds — every common printed unit must convert, otherwise
+    # the unit gate would silently skip the critical check
+    ("potassium", "mEq/L", "mmol/L", 1.0, 0.0),      # monovalent: 1 mEq = 1 mmol
+    ("sodium", "mEq/L", "mmol/L", 1.0, 0.0),
+    ("calcium_total", "mEq/L", "mmol/L", 0.5, 0.0),  # divalent
+    ("hemoglobin", "g/dL", "g/L", 10.0, 0.0),
     (None, "kg", "g", 1000.0, 0.0),
     # glucose mg/dL → mmol/L
     ("glucose", "mg/dL", "mmol/L", 0.05551, 0.0),

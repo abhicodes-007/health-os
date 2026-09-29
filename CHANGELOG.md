@@ -14,6 +14,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - MCP tool annotations: reads are read-only, writes are not, `approve_staged_source` is
   destructive — clients can auto-allow reads and ask before approving lab values.
 
+### Safety
+- **Critical values were silently missed** when a lab printed the unit or name differently:
+  `mmol/l`, `ммоль/л`, `g/dL`, `mEq/L`, `10^9/L`, `×10⁹/л`, `/µL`, `K`, `Potasio`… The unit gate
+  failed and the critical check never ran. Units are now canonicalized (case, Cyrillic,
+  powers of ten), conversions for every critical-watch analyte were added, and Spanish/`K`
+  synonyms for them.
+- Fail-safe: a critical-watch analyte whose unit still can't be converted raises an alert
+  ("critical check impossible — compare with the form") instead of passing silently.
+- `get_health_summary` now starts with the values awaiting review, critical ones spelled out —
+  previously a pending critical value was invisible in the summary.
+- A marker appearing twice on one form (e.g. fasting + 2 h glucose) no longer aborts the whole
+  panel; the duplicate is reported and the other rows — including critical ones — are kept.
+- Alert logging can't break ingestion (read-only FS) and also goes to stderr, which MCP clients
+  keep (a `docker run --rm` container loses its log file).
+
 ### Security
 - `sql_query` always runs as `health_readonly` (`SET LOCAL ROLE`). Without
   `READONLY_DATABASE_URL` it used to run as the database owner — a superuser in the Docker image —

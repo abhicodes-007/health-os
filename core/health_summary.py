@@ -63,6 +63,32 @@ def build(conn, user_id: str) -> SummaryResult:
         lines.append("**Profile:** not filled in (date of birth and sex required).")
     lines.append("")
 
+    # --- pending review: critical values first (never let "no abnormalities" hide them) ---
+    pending = conn.execute(
+        text(
+            """SELECT ot.code, o.value_numeric, o.unit, o.effective_at, o.status,
+                      (o.value_canonical IS NULL AND o.value_numeric IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM critical_thresholds ct
+                                   WHERE ct.type_id = o.type_id)) AS unverifiable
+               FROM observations o JOIN observation_types ot ON ot.id = o.type_id
+               WHERE o.user_id=:u AND o.review_status='pending' AND o.deleted_at IS NULL
+               ORDER BY o.effective_at DESC"""
+        ),
+        {"u": user_id},
+    ).mappings().all()
+    alarming = [p for p in pending if p["status"] == "critical" or p["unverifiable"]]
+    if pending:
+        lines.append(f"## ⚠️ Awaiting review ({len(pending)} values, not yet facts)")
+        for p in alarming:
+            what = ("**CRITICAL value** — contact a doctor today, even if it may be a "
+                    "recognition error" if p["status"] == "critical" else
+                    "**unit not recognized — critical check impossible**, compare with the form now")
+            lines.append(f"- {p['code']} {p['value_numeric']:g} {p['unit'] or ''} "
+                         f"({p['effective_at']:%Y-%m-%d}): {what}")
+        if len(pending) > len(alarming):
+            lines.append(f"- {len(pending) - len(alarming)} other value(s) — see list_pending_reviews")
+        lines.append("")
+
     # --- allergies (including unverified!) ---
     allergies = conn.execute(
         text(

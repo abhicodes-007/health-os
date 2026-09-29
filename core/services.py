@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from core.normalize import compute_status, normalize
 from safety.critical_values import CriticalHit, evaluate, load_thresholds
@@ -250,6 +251,7 @@ class IngestResult:
     critical: CriticalHit | None
     needs_review: bool
     note: str
+    critical_unverified: bool = False  # analyte has critical thresholds, but the unit is unknown
 
 
 def ingest_observation(
@@ -275,9 +277,12 @@ def ingest_observation(
 
     # critical values — on the canonical value
     critical: CriticalHit | None = None
+    thresholds = load_thresholds(conn) if nr.type_code else []
     if nr.type_code and nr.value_canonical is not None and nr.canonical_unit is not None:
-        critical = evaluate(nr.type_code, nr.value_canonical, nr.canonical_unit,
-                            load_thresholds(conn))
+        critical = evaluate(nr.type_code, nr.value_canonical, nr.canonical_unit, thresholds)
+    # fail-safe: a critical-watch analyte whose unit we can't convert must not pass silently
+    critical_unverified = (critical is None and value is not None and nr.conversion_missing
+                           and any(t.type_code == nr.type_code for t in thresholds))
 
     needs_review = False
     notes = []
@@ -295,6 +300,12 @@ def ingest_observation(
         if alerter is not None:
             alerter("Health OS — critical value",
                     f"{nr.type_code} {critical.value}{critical.unit}: {critical.message_uk}")
+    if critical_unverified:
+        notes.append(f"CRITICAL CHECK IMPOSSIBLE — unit “{unit}” not recognized for "
+                     f"{nr.type_code}; compare the value with the form now")
+        if alerter is not None:
+            alerter("Health OS — verify a value",
+                    f"{nr.type_code} {value} {unit}: unit not recognized, critical check impossible")
     if nr.synonym_origin == "learned":
         notes.append("mapped via a learned synonym — highlight for review")
 
@@ -321,7 +332,7 @@ def ingest_observation(
     ).scalar()
 
     return IngestResult(str(oid), nr, status, critical, needs_review,
-                        "; ".join(notes) or "ok")
+                        "; ".join(notes) or "ok", critical_unverified)
 
 
 # --------------------------------------------------------------------------- panel staging
@@ -372,21 +383,32 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
     )
 
     results = []
-    n_critical = n_unknown = n_unit_gate = 0
+    n_critical = n_unknown = n_unit_gate = n_crit_unverified = 0
     for r in rows:
         row_eff = r.get("effective_at")
         # an observation from a form is dated with the panel date (historical date, day only)
         eff = row_eff or panel_date
         tp = "datetime" if row_eff else "date"
-        res = ingest_observation(
-            conn, user_id, r["raw_name"], r.get("value"), r.get("unit"),
-            ref_min=r.get("ref_min"), ref_max=r.get("ref_max"),
-            value_text=r.get("value_text"), effective_at=eff, time_precision=tp,
-            channel="mcp", review_status="pending", panel_id=panel_id,
-            source_id=source_id, alerter=alerter,
-        )
+        try:
+            with conn.begin_nested():  # savepoint: one bad row must not lose the whole panel
+                res = ingest_observation(
+                    conn, user_id, r["raw_name"], r.get("value"), r.get("unit"),
+                    ref_min=r.get("ref_min"), ref_max=r.get("ref_max"),
+                    value_text=r.get("value_text"), effective_at=eff, time_precision=tp,
+                    channel="mcp", review_status="pending", panel_id=panel_id,
+                    source_id=source_id, alerter=alerter,
+                )
+        except IntegrityError:
+            # the same marker twice in one panel (e.g. fasting + 2 h glucose) — uq_obs_in_panel
+            results.append({"raw_name": r["raw_name"], "value": r.get("value"),
+                            "unit": r.get("unit"), "stored": False,
+                            "note": "same marker already in this panel — not stored; stage it as "
+                                    "a separate panel (e.g. with its own time)"})
+            continue
         if res.critical:
             n_critical += 1
+        if res.critical_unverified:
+            n_crit_unverified += 1
         if res.normalized.unknown_type:
             n_unknown += 1
         if res.normalized.conversion_missing:
@@ -406,6 +428,7 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
             "canonical": res.normalized.value_canonical,
             "status": res.status,
             "critical": bool(res.critical),
+            "critical_unverified": res.critical_unverified,
             "confidence": conf.score,
             "confidence_flags": conf.flags,
             "note": res.note,
@@ -416,7 +439,8 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
         "panel_id": panel_id,
         "rows": results,
         "counts": {"total": len(rows), "critical": n_critical,
-                   "unknown": n_unknown, "unit_gate": n_unit_gate},
+                   "unknown": n_unknown, "unit_gate": n_unit_gate,
+                   "critical_unverified": n_crit_unverified},
         "duplicate_warning": dup_warning,
         "hint": "Review the table. To write to approved — approve_staged(source_id) "
                 "as a separate explicit command.",

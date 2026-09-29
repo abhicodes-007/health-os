@@ -29,6 +29,45 @@ def canonicalize(name: str) -> str:
     return s
 
 
+# ---- unit spelling → canonical spelling -------------------------------------------------
+# Lab forms write the same unit many ways: "mmol/l", "ммоль/л", "10^9/L", "×10⁹/л", "мкМО/мл".
+# Without this the unit gate fails and — worse — the critical-value check is silently skipped.
+_CYR_UNITS = [  # longest first; applied to a lower-cased, space-free string
+    ("ммрт.ст.", "mmhg"), ("ммрт.ст", "mmhg"), ("мм/год", "mm/h"), ("мм/ч", "mm/h"),
+    ("уд/хв", "bpm"), ("уд/мин", "bpm"),
+    ("мкмоль", "umol"), ("ммоль", "mmol"), ("нмоль", "nmol"), ("пмоль", "pmol"), ("моль", "mol"),
+    ("мкмо", "uiu"), ("ммо", "miu"), ("мо", "iu"),
+    ("мкг", "ug"), ("мг", "mg"), ("нг", "ng"), ("пг", "pg"), ("фл", "fl"),
+    ("год", "h"), ("од", "u"), ("ед", "u"), ("дл", "dl"), ("мл", "ml"), ("л", "l"), ("г", "g"),
+]
+_SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+_POW10 = re.compile(r"^[x×*]?10[\^*e]?(3|6|9|12)/")
+# canonical spellings: every canonical unit of the catalog + source units of conversions
+_KNOWN_UNITS = [
+    "%", "10*9/L", "10*12/L", "mmol/L", "umol/L", "nmol/L", "pmol/L", "g/L", "g/dL", "mg/L",
+    "mg/dL", "U/L", "IU/L", "IU/mL", "mIU/L", "mIU/mL", "uIU/mL", "ng/mL", "pg/mL", "ug/L",
+    "mEq/L", "mmHg", "bpm", "fL", "pg", "mm/h", "h", "min", "ms", "kg", "g", "cm", "Cel",
+    "degF", "kcal", "/uL", "10*3/uL", "10*6/uL",
+]
+
+
+def _unit_key(unit: str) -> str:
+    k = _WS.sub("", unit).lower().translate(_SUPERSCRIPTS).replace("µ", "u").replace("μ", "u")
+    for cyr, lat in _CYR_UNITS:
+        k = k.replace(cyr, lat)
+    return _POW10.sub(lambda m: f"10*{m.group(1)}/", k)
+
+
+_UNIT_BY_KEY = {_unit_key(u): u for u in _KNOWN_UNITS}
+
+
+def canonicalize_unit(unit: str | None) -> str | None:
+    """Map a unit as printed on a form to its canonical spelling; unknown → stripped original."""
+    if unit is None or not unit.strip():
+        return None
+    return _UNIT_BY_KEY.get(_unit_key(unit), unit.strip())
+
+
 @dataclass
 class NormResult:
     raw_name: str
@@ -91,6 +130,7 @@ def convert_to_canonical(
 
 def normalize(raw_name: str, value: float | None, unit: str | None, conn) -> NormResult:
     """Full pass: name → type; value+unit → canonical (with the unit gate)."""
+    unit = canonicalize_unit(unit)
     t = find_type(raw_name, conn)
     if t is None:
         return NormResult(raw_name, None, None, None, None, None, None,
