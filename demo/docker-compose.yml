@@ -2,7 +2,10 @@
 #
 #   cd demo
 #   docker compose up -d --build     # db + migrations + demo data
-#   docker compose run --rm -T mcp   # what your MCP client runs
+#   docker run -i --rm --network health-os-demo \
+#     -e DATABASE_URL=postgresql+psycopg://health:demo@db:5432/health_os health-os:local
+#                                    # ↑ what your MCP client runs (exits cleanly on disconnect;
+#                                    #   `docker compose run` would leave the container running)
 #   docker compose down -v           # remove everything
 #
 # Lives in its own directory → its own compose project and volume: it never touches a real
@@ -39,14 +42,9 @@ services:
              (python -m seed.demo || echo 'demo data already loaded')"
     restart: "no"
 
-  mcp:
-    image: health-os:local
-    environment: *app-env
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    stdin_open: true
-    profiles: [mcp]  # not started by `up`; the MCP client launches it with `run`
+networks:
+  default:
+    name: health-os-demo  # fixed name: the MCP client joins it with `docker run --network`
 
 volumes:
   demo-pg:

@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed
+- Demo MCP config uses `docker run -i --rm` instead of `docker compose run`, which left a
+  running container behind after every client session.
+
 ## [0.1.0] — 2026-09-29
 
 First public release.

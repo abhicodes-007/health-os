@@ -39,14 +39,16 @@ git clone https://github.com/andronaft/health-os && cd health-os/demo
 docker compose up -d --build
 ```
 
-Point your MCP client at it (use the absolute path to `demo/docker-compose.yml`):
+Point your MCP client at it:
 
 ```json
 {
   "mcpServers": {
     "health-os-demo": {
       "command": "docker",
-      "args": ["compose", "-f", "/path/to/health-os/demo/docker-compose.yml", "run", "--rm", "-T", "mcp"]
+      "args": ["run", "-i", "--rm", "--network", "health-os-demo",
+               "-e", "DATABASE_URL=postgresql+psycopg://health:demo@db:5432/health_os",
+               "health-os:local"]
     }
   }
 }
