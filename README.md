@@ -4,8 +4,8 @@
 
 **Local-first personal health record, exposed over [MCP](https://modelcontextprotocol.io).**
 Your labs, diagnoses, medications, wearable data and food log live in your own Postgres; any
-MCP client — a local model in LM Studio / Open WebUI / Ollama, or a cloud assistant — can read
-and update them through guarded tools. Critical values, drug-safety rules and screening
+MCP client — one running a local model or a cloud assistant — can read and update them through
+guarded tools. Critical values, drug-safety rules and screening
 schedules are deterministic code, not LLM judgement.
 
 <p align="center"><img src="docs/demo.svg" alt="An MCP session with the demo patient: LDL trend and the pending-review queue" width="820"></p>
@@ -77,8 +77,10 @@ Then connect an MCP client — config for LM Studio, Open WebUI, Ollama CLI and 
 [mcp_server/README.md](mcp_server/README.md). Try: *"show my health summary"*,
 *"LDL trend"*, *"what am I short on nutritionally this week?"*.
 
-**Fully local stack:** `make setup` installs Ollama, pulls `qwen3:8b` and starts Open WebUI
-at http://localhost:3000.
+**Local models:** the server speaks standard MCP over stdio, so any MCP client that runs a
+local model can use it. Verified so far: the server itself with the official MCP Python client
+(CI + the Docker demo). Not yet verified end-to-end with a local model — see
+[#9](https://github.com/andronaft/health-os/issues/9); reports welcome.
 
 ## How it works
 

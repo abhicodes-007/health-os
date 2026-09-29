@@ -28,7 +28,8 @@ path to your `health-os` checkout:
 }
 ```
 
-Where that JSON goes:
+Where that JSON goes (paths and steps from each client's docs; **not yet tested end-to-end
+with health-os** — see [#9](https://github.com/andronaft/health-os/issues/9)):
 
 | Client | Runs the model | Config |
 |---|---|---|
@@ -41,8 +42,8 @@ Where that JSON goes:
 With a **local** model, nothing leaves your machine. With a **cloud** model, whatever the tools
 return is sent to that provider — see *Privacy* in the main README.
 
-Local models: pick one with solid tool calling (e.g. Qwen 2.5/3, Llama 3.1+ in 7B+ sizes).
-Small models make more tool-call mistakes — the guardrails below are enforced in code for that reason.
+Local models: tool calling quality varies a lot between models and sizes; small models make
+more tool-call mistakes — the guardrails below are enforced in code for that reason.
 
 Once connected, the chat understands prompts like "show the health summary", "cholesterol
 trend over 2 years", "what is pending review", "what did I eat this week and what am I short on".
