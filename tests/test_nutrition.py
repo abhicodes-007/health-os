@@ -61,3 +61,17 @@ def test_daily_sodium_excess_over_upper_limit(conn, user_id):
     total, ul = float(row[0]), float(row[1])
     assert total == 3000
     assert total > ul  # sodium overage → excess flag in query_nutrition
+
+
+def test_limit_only_nutrients_never_deficient(conn, user_id):
+    from analytics.nutrition import is_limit_only, summarize
+
+    assert is_limit_only(50, 50) and is_limit_only(2300, 2300)
+    assert not is_limit_only(1000, 2500) and not is_limit_only(None, 2) and not is_limit_only(56, None)
+
+    # a day with little sugar/sodium and little calcium: only calcium is a deficiency
+    add_food_log(conn, user_id, "plain rice", eaten_at=datetime.now(),
+                 nutrients={"added_sugar": 2, "sodium": 100, "calcium": 50})
+    deficient = {d["nutrient"] for d in summarize(conn, user_id, days=7)["deficient"]}
+    assert "calcium" in deficient
+    assert not deficient & {"added_sugar", "sodium"}

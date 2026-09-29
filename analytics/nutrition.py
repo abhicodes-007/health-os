@@ -11,6 +11,12 @@ from __future__ import annotations
 from sqlalchemy import text
 
 
+def is_limit_only(rda: float | None, ul: float | None) -> bool:
+    """Nutrients whose "norm" is a ceiling (sugar, saturated fat, sodium, cholesterol): the
+    catalog stores rda == upper_limit. Eating less of them is never a deficiency."""
+    return rda is not None and ul is not None and rda >= ul
+
+
 def summarize(conn, user_id: str, days: int = 30) -> dict:
     rows = conn.execute(
         text(
@@ -37,7 +43,7 @@ def summarize(conn, user_id: str, days: int = 30) -> dict:
             flag = "excess"
             excess.append({"nutrient": r["nutrient_code"], "name_uk": r["name_uk"],
                            "avg_per_day": round(avg, 1), "unit": r["unit"], "limit": ul})
-        elif rda and pct is not None and pct < 70:
+        elif rda and pct is not None and pct < 70 and not is_limit_only(rda, ul):
             flag = "deficient"
             deficient.append({"nutrient": r["nutrient_code"], "name_uk": r["name_uk"],
                               "pct_rda": pct, "avg_per_day": round(avg, 1), "unit": r["unit"]})
