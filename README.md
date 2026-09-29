@@ -12,60 +12,67 @@ schedules are deterministic code, not LLM judgement.
 > Critical-value alerts and screening reminders are only a signal to contact a doctor —
 > never a diagnosis and never a reason to delay care. Use at your own risk.
 
-## Stack
+## What it does
 
-Python 3.13 · PostgreSQL 16 (Docker) · SQLAlchemy · Alembic · FastMCP · FastAPI · aiogram · APScheduler.
-pgvector is enabled in Phase 3 (the image already has it), not earlier.
+- **Lab results** — drop a PDF or photo into your MCP client; the model extracts the values,
+  health-os normalizes names (uk/ru/en/Latin synonyms) and units, and stages the panel as
+  *pending*. Nothing counts as fact until you approve it.
+- **Safety net in code** — critical values alert immediately (log, macOS notification,
+  optional Telegram); critical findings in narrative reports are flagged; drug-interaction
+  questions are refused and redirected to a doctor/pharmacist (only deterministic checks run,
+  e.g. total daily paracetamol across products); a crisis protocol answers without any LLM.
+- **Trends and analytics** — Mann-Kendall trends, personal baselines and anomalies,
+  age-gated risk calculators, a screening calendar, a weekly report, a doctor-visit brief.
+- **Food log** — meals with a 41-nutrient profile, %RDA, deficiency/excess flags, meal templates.
+- **Devices** — Apple Health export and Garmin import.
+- **26 MCP tools** — see [mcp_server/README.md](mcp_server/README.md).
 
-## Structure
+## Quick start
 
-```
-health-os/
-├── docker-compose.yml     # Postgres 16 (pgvector image)
-├── alembic.ini
-├── migrations/            # Alembic; 0001 = schema v3 (Part 3 of the plan)
-├── core/                  # config, db, (Phase 1: models, schemas, services, normalize/)
-├── ingestion/             # Phase 1: pipeline (state machine), extractors/, importers/
-├── mcp_server/            # Phase 1
-├── api/                   # Phase 4 (planned, not yet created)
-├── worker/                # APScheduler: recomputation, cron reports, device_samples partitions
-├── bot/                   # Phase 4 (aiogram; planned, not yet created)
-├── analytics/             # Phase 5
-├── safety/                # Phase 1: critical_values, red_flags, crisis — deterministic code
-├── evals/                 # Phase 1: golden set + red-team
-├── prompts/               # versioned prompts
-├── seed/                  # observation_types, synonyms, unit_conversions, reference_ranges
-└── data/                  # files, backups (outside git)
-```
-
-## Quick start (Phase 0)
+Requires Docker and Python 3.12+.
 
 ```bash
-cp .env.example .env          # edit passwords
-docker compose up -d          # bring up Postgres 16
-uv sync                       # or: python3 -m venv .venv && pip install -e .
-uv run alembic upgrade head   # schema v3
-uv run python -m seed.load    # marker reference data
+git clone https://github.com/andronaft/health-os && cd health-os
+cp .env.example .env                  # set the passwords
+docker compose up -d db               # Postgres 16 + pgvector
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/alembic upgrade head        # schema
+.venv/bin/python -m seed.load         # marker catalog, synonyms, units, nutrients
+.venv/bin/python -m seed.demo         # optional: a fictional demo patient to play with
 ```
 
-**Phase 0 criterion:** `docker compose up` → live database; `alembic upgrade head` without errors;
-seed loaded; backup→restore test passed; FileVault enabled (`fdesetup status`).
+Then connect an MCP client — config for LM Studio, Open WebUI, Ollama CLI and Claude is in
+[mcp_server/README.md](mcp_server/README.md). Try: *"show my health summary"*,
+*"LDL trend"*, *"what am I short on nutritionally this week?"*.
 
-## Tests
+**Fully local stack:** `make setup` installs Ollama, pulls `qwen3:8b` and starts Open WebUI
+at http://localhost:3000.
 
-```bash
-make test              # everything (needs Postgres for the integration part)
-make test-unit         # pure unit tests — no database needed
-make test-integration  # only tests marked `integration`
+## How it works
+
+```
+MCP client (local or cloud model)
+        │ stdio
+   mcp_server/  ── read tools ──▶ approved views (read-only role, 5s timeout, row limits)
+        │        ── write tools ─▶ core/services: normalize → status → critical rules → pending
+        │
+   safety/    critical values, narrative flags, interactions, crisis, alerts
+   analytics/ trends, baselines, calculators, screening, nutrition, weekly report
+        │
+   PostgreSQL 16 + pgvector  ◀── ingestion/ (Apple Health, Garmin, embeddings)
 ```
 
-Tests that need the database carry the `integration` marker — added automatically for tests
-using the `conn`/`user_id` fixtures, or via `pytestmark` for modules that use `engine` directly.
-
-Integration tests never touch the working database: `tests/conftest.py` drops and recreates
-`<POSTGRES_DB>_test` on the same Postgres server (migrations + seed) on every run.
-Override with `TEST_DATABASE_URL` (the database name must end in `_test`).
-If Postgres is down, integration tests are skipped; unit tests still run.
+| Directory | What's inside |
+|---|---|
+| `core/` | config, DB, normalization, services, dedup, health summary |
+| `mcp_server/` | MCP server, read and write tools |
+| `safety/` | deterministic safety rules and alert delivery |
+| `analytics/` | trends, baselines, calculators, screening, nutrition, reports |
+| `ingestion/` | extraction schema, confidence scoring, device importers, embeddings |
+| `migrations/` | Alembic schema |
+| `seed/` | reference catalog + the demo patient |
+| `evals/` | red-team scenarios (injections, hidden critical values, unit tricks) |
+| `scripts/` | backup/restore (restic + launchd), read-only role setup, importers |
 
 ## Privacy / local-first
 
@@ -80,6 +87,21 @@ If Postgres is down, integration tests are skipped; unit tests still run.
 - Optional alert channel (Telegram) sends only a generic "check your health system" text, never values.
 - Encrypt the disk (FileVault / LUKS / BitLocker) — the database files are plaintext at rest.
 - Never put real medical data in issues, PRs or tests — synthetic data only.
+
+## Tests
+
+```bash
+make test              # everything (needs Postgres for the integration part)
+make test-unit         # pure unit tests — no database needed
+make test-integration  # only tests marked `integration`
+```
+
+Integration tests never touch the working database: `tests/conftest.py` drops and recreates
+`<POSTGRES_DB>_test` on the same server (migrations + seed) on every run. Override with
+`TEST_DATABASE_URL` (the name must end in `_test`). Without Postgres, integration tests are
+skipped locally; CI sets `REQUIRE_DB=1` so they fail instead.
+
+Development history: [PROGRESS.md](PROGRESS.md).
 
 ## License
 
