@@ -94,3 +94,23 @@ def test_check_medication_safety_tool():
         paracetamol_products=[{"name": "Paracetamol", "mg_per_dose": 1000, "doses_per_day": 5}]))
     assert out["paracetamol"]["level"] == "exceeded"
     assert "interactions" in out
+
+
+def test_query_nutrition_does_not_flag_low_sugar_as_deficient():
+    from datetime import datetime
+
+    from core.services import add_food_log
+
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        fid = add_food_log(conn, uid, "plain rice", eaten_at=datetime.now(),
+                           nutrients={"added_sugar": 2, "sodium": 100, "calcium": 50})["id"]
+    try:
+        flags = {n["nutrient"]: n["flag"]
+                 for n in json.loads(tools.query_nutrition(days=1))["nutrients"]}
+        assert flags["calcium"] == "deficient"
+        assert flags["added_sugar"] is None and flags["sodium"] is None
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM food_nutrients WHERE food_log_id=:i"), {"i": fid})
+            conn.execute(text("DELETE FROM food_log WHERE id=:i"), {"i": fid})

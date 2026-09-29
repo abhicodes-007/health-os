@@ -18,6 +18,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   and could read unapproved values, the audit log and files on the database server.
 
 ### Fixed
+- `query_nutrition` had its own copy of the flag logic and still reported low sugar/sodium as
+  deficient; it now uses the same `analytics.nutrition.summarize` as `nutrition_report`.
 - The safety layer described in the README was not reachable over MCP: the system prompt was
   never sent and the crisis/medication checks had no tools.
 - Demo MCP config uses `docker run -i --rm` instead of `docker compose run`, which left a

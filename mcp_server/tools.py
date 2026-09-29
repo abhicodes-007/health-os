@@ -130,47 +130,15 @@ def query_food(days: int = 7, meal_type: str = "") -> str:
 def query_nutrition(days: int = 7) -> str:
     """"Healthiness" over N days: average daily intake of each nutrient, %RDA and flags
     deficient (<70% of norm) / excess (>safe upper limit). For tracking vitamins/minerals,
-    sodium, sugar, saturated fats, etc."""
+    sodium, sugar, saturated fats, etc. Same numbers as nutrition_report (one implementation)."""
+    from analytics.nutrition import summarize
     with engine.connect() as conn:
         uid = _user_id(conn)
         if not uid:
             return json.dumps({"error": "no user"})
-        rows = conn.execute(
-            text(
-                """
-                SELECT nutrient_code, name_uk, category, unit,
-                       sum(amount) AS total,
-                       count(DISTINCT date_trunc('day', eaten_at)) AS days_logged,
-                       max(rda) AS rda, max(upper_limit) AS upper_limit
-                FROM v_food_nutrients
-                WHERE user_id=:u AND eaten_at >= now() - make_interval(days => :d)
-                GROUP BY nutrient_code, name_uk, category, unit
-                ORDER BY category, nutrient_code
-                """
-            ),
-            {"u": uid, "d": days},
-        ).mappings().all()
-        summary = []
-        for r in rows:
-            days_logged = r["days_logged"] or 1
-            avg = float(r["total"]) / days_logged
-            rda = float(r["rda"]) if r["rda"] is not None else None
-            ul = float(r["upper_limit"]) if r["upper_limit"] is not None else None
-            pct = round(avg / rda * 100) if rda else None
-            flag = None
-            if ul is not None and avg > ul:
-                flag = "excess"
-            elif rda and pct is not None and pct < 70:
-                flag = "deficient"
-            summary.append({
-                "nutrient": r["nutrient_code"], "name_uk": r["name_uk"],
-                "category": r["category"], "unit": r["unit"],
-                "avg_per_day": round(avg, 2), "rda": rda, "pct_rda": pct,
-                "upper_limit": ul, "flag": flag,
-            })
-        return json.dumps({"days": days, "days_logged": max((r["days_logged"] for r in rows),
-                                                            default=0),
-                           "nutrients": summary}, default=str, ensure_ascii=False)
+        s = summarize(conn, uid, days)
+    return json.dumps({"days": days, "days_logged": s["days_logged"], "nutrients": s["nutrients"]},
+                      default=str, ensure_ascii=False)
 
 
 def nutrition_report(days: int = 30) -> str:
