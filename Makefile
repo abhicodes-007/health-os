@@ -1,4 +1,4 @@
-.PHONY: setup start stop restart logs pull-model test test-unit test-integration
+.PHONY: setup start stop restart logs pull-model test test-unit test-integration lint
 
 setup:
 	@bash setup.sh
@@ -26,3 +26,6 @@ test-unit:
 
 test-integration:
 	@uv run pytest -q -m integration
+
+lint:
+	@uv run ruff check .

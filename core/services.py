@@ -6,7 +6,6 @@ status computation from the form, and the deterministic critical-value rule-engi
 """
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 

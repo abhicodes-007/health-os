@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --locked --extra dev ruff check .
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # scan the whole history, not just the last commit
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -35,21 +52,22 @@ jobs:
       # conftest.py redirects to <db>_test and recreates it (migrations + seed) on every run
       DATABASE_URL: postgresql+psycopg://health:ci_only_password@localhost:5432/health_os
       REQUIRE_DB: "1"
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
 
-      - name: Install
-        run: pip install -e ".[dev]"
+      - name: Install (locked)
+        run: uv sync --locked --extra dev
 
       - name: Unit tests
-        run: python -m pytest -q -m "not integration"
+        run: uv run python -m pytest -q -m "not integration" --cov --cov-report=
 
       - name: Integration tests
-        run: python -m pytest -q -m integration -rs
+        run: uv run python -m pytest -q -m integration -rs --cov --cov-append --cov-report=
+
+      - name: Coverage
+        run: uv run coverage report --sort=cover --format=markdown | tee -a "$GITHUB_STEP_SUMMARY"

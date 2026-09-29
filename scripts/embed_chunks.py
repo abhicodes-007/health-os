@@ -22,7 +22,7 @@ def main() -> None:
             return
         print(f"Encoding {len(rows)} chunks with model {MODEL_NAME} (first run downloads ~1 GB)...")
         vecs = embed_texts([content for _id, content in rows])
-        for (cid, _c), v in zip(rows, vecs):
+        for (cid, _c), v in zip(rows, vecs, strict=True):
             conn.execute(
                 text("UPDATE document_chunks SET embedding=CAST(:e AS vector), embedding_model=:m WHERE id=:id"),
                 {"e": to_pgvector(v), "m": MODEL_NAME, "id": cid},

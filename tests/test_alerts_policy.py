@@ -1,5 +1,5 @@
-from safety import narrative_flags, policy
 from core.services import ingest_observation
+from safety import narrative_flags, policy
 
 
 class FakeAlerter:

@@ -13,10 +13,10 @@ import json
 
 from sqlalchemy import text
 
+from analytics.screening import build_calendar
 from core.db import engine as rw_engine
 from core.db import readonly_engine as engine
 from core.health_summary import build
-from analytics.screening import build_calendar
 
 MAX_ROWS = 200
 AGG_THRESHOLD_DAYS = 90
@@ -301,7 +301,7 @@ def get_screening_recommendations() -> str:
         def _fam(patterns: list[str]) -> bool:
             return bool(conn.execute(
                 text("""SELECT 1 FROM family_history WHERE user_id=:u AND deleted_at IS NULL
-                        AND (""" + " OR ".join("condition ILIKE :p%d" % i for i in range(len(patterns))) + ") LIMIT 1"),
+                        AND (""" + " OR ".join(f"condition ILIKE :p{i}" for i in range(len(patterns))) + ") LIMIT 1"),
                 {"u": uid, **{f"p{i}": p for i, p in enumerate(patterns)}},
             ).first())
 
