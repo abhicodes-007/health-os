@@ -460,6 +460,10 @@ def sql_query(sql: str) -> str:
         with engine.connect() as conn:
             trans = conn.begin()
             conn.execute(text("SET TRANSACTION READ ONLY"))
+            # Always drop to the view-only role — also when READONLY_DATABASE_URL is not set and
+            # we are connected as the owner (a superuser in the Docker image). Fails closed: if
+            # the role can't be assumed, the query is not run.
+            conn.execute(text("SET LOCAL ROLE health_readonly"))
             conn.execute(text("SET LOCAL statement_timeout = '5s'"))
             rows = conn.execute(text(s)).mappings().all()
             trans.rollback()

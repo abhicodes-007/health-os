@@ -31,6 +31,18 @@ def test_sql_query_is_read_only_at_db_level():
     assert "error" in out  # rejected (doesn't start with select, or read-only)
 
 
+
+def test_sql_query_sees_only_approved_views_without_readonly_url():
+    # tests run WITHOUT READONLY_DATABASE_URL, as the owner (a superuser in Docker) — the case
+    # that used to expose base tables and server files
+    assert "rows" in json.loads(tools.sql_query("SELECT count(*) FROM v_observations"))
+    for q in ("SELECT count(*) FROM observations",          # includes pending/unverified rows
+              "SELECT count(*) FROM audit_log",
+              "SELECT date_of_birth FROM user_profile",
+              "SELECT pg_read_file('/etc/hostname')"):      # server files
+        out = json.loads(tools.sql_query(q))
+        assert "permission denied" in out.get("error", ""), (q, out)
+
 def test_query_observations_roundtrip():
     with engine.begin() as conn:
         uid = get_or_create_user(conn)

@@ -12,6 +12,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - `check_medication_safety` tool: interaction refusal + total daily paracetamol + biotin checks.
 - `crisis_resources` tool: the fixed crisis response, now reachable from any MCP client.
 
+### Security
+- `sql_query` always runs as `health_readonly` (`SET LOCAL ROLE`). Without
+  `READONLY_DATABASE_URL` it used to run as the database owner — a superuser in the Docker image —
+  and could read unapproved values, the audit log and files on the database server.
+
 ### Fixed
 - The safety layer described in the README was not reachable over MCP: the system prompt was
   never sent and the crisis/medication checks had no tools.
