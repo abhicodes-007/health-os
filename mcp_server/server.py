@@ -11,6 +11,7 @@ mcp config pointing to this command.
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from mcp_server import tools, write_tools
 from prompts.system_prompt import SYSTEM_PROMPT
@@ -18,6 +19,19 @@ from prompts.system_prompt import SYSTEM_PROMPT
 # Server instructions: MCP clients that support them put the safety rules into the model's
 # context. The same text is also exposed as the `health_assistant` prompt below.
 mcp = FastMCP("health-os", instructions=SYSTEM_PROMPT)
+
+# Tool annotations let clients auto-allow reads and ask the user before writes. Approving a
+# staged panel turns unverified values into facts — marked destructive so clients confirm it.
+READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+                        openWorldHint=False)
+WRITE_IDEMPOTENT = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+                                   openWorldHint=False)
+STAGE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+                        openWorldHint=True)  # may send a critical-value alert (Telegram)
+APPROVE = ToolAnnotations(title="Approve a staged lab panel (confirm with the user)",
+                          readOnlyHint=False, destructiveHint=True, idempotentHint=True,
+                          openWorldHint=False)
 
 # Compact DDL excerpt of the approved views to hint the model in sql_query.
 _SCHEMA_HINT = """
@@ -42,79 +56,79 @@ Examples:
 """.strip()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_health_summary() -> str:
     """Deterministic health summary: profile, allergies (including unverified), active diagnoses,
     current medications, recency of exams. A guide — exact values via query_observations."""
     return tools.get_health_summary()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def query_observations(type_code: str, days: int = 365) -> str:
     """Values of a marker (e.g. 'cholesterol_total') over N days. >90 days → weekly
     aggregation min/avg/max. Only confirmed (approved) values."""
     return tools.query_observations(type_code, days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_timeline(days: int = 3650) -> str:
     """Chronology of health events (diagnoses, visits, panels, medications, hospitalizations, vaccinations)."""
     return tools.get_timeline(days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def query_food(days: int = 7, meal_type: str = "") -> str:
     """Food log over N days: meals (gi/gl/wellbeing) + nutrients per meal.
     Optional meal_type filter (breakfast/lunch/dinner/snack/drink)."""
     return tools.query_food(days, meal_type)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def query_nutrition(days: int = 7) -> str:
     """"Healthiness" over N days: average daily intake of each nutrient, %RDA and flags
     deficient (<70% of norm)/excess (>upper limit). Vitamins, minerals, sodium, sugar, fats."""
     return tools.query_nutrition(days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def nutrition_report(days: int = 30) -> str:
     """Nutrition analytics over N days: top deficiencies/excesses (%RDA+flags) + food's link
     to wellbeing (average GI/sugar/sodium by wellbeing category). Association, not causation."""
     return tools.nutrition_report(days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def list_meal_templates() -> str:
     """Saved templates for frequent meals (for quick log_from_template)."""
     return tools.list_meal_templates()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_medications() -> str:
     """Current medications with doses (status='taking')."""
     return tools.get_medications()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_diagnoses() -> str:
     """Diagnoses with two status axes (clinical_status + verification_status).
     Advice — only on confirmed; suspected — in question."""
     return tools.get_diagnoses()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_allergies() -> str:
     """Allergies, including unverified (fail-safe: treated as an allergy)."""
     return tools.get_allergies()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def list_pending_reviews() -> str:
     """Markers in the review queue (NOT confirmed — do not cite as fact)."""
     return tools.list_pending_reviews()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def search(query: str, limit: int = 8, days: int = 0) -> str:
     """Full-text search over document narratives (doctors' conclusions, immunogram
     interpretations, ultrasound descriptions). For questions like "what did the immunologist
@@ -123,32 +137,32 @@ def search(query: str, limit: int = 8, days: int = 0) -> str:
     return tools.search(query, limit, days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_screening_recommendations() -> str:
     """Screening calendar for the user's profile (age-gate, "you don't need this yet").
     Statuses: due/overdue/up_to_date/not_yet. Requires a filled-in profile."""
     return tools.get_screening_recommendations()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_trend(type_code: str, days: int = 1825) -> str:
     """Marker trend (Mann-Kendall): increasing/decreasing/no_trend + significance."""
     return tools.get_trend(type_code, days)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def prepare_doctor_visit(specialty: str = "") -> str:
     """Preparation package for a visit: summary + recent abnormalities + screening due + pending queue."""
     return tools.prepare_doctor_visit(specialty)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def get_weekly_report() -> str:
     """Deterministic weekly report + health metrics of the system itself (pending-queue size)."""
     return tools.get_weekly_report()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def sql_query(sql: str) -> str:
     """Arbitrary READ-ONLY SELECT over approved-views (read-only tx + timeout 5s).
 
@@ -158,7 +172,7 @@ def sql_query(sql: str) -> str:
 
 
 # ---------------------------------------------------------------- SAFETY tools
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def check_medication_safety(paracetamol_products: list[dict] | None = None,
                             taking_biotin: bool | None = None,
                             planned_tests: list[str] | None = None) -> str:
@@ -171,7 +185,7 @@ def check_medication_safety(paracetamol_products: list[dict] | None = None,
     return tools.check_medication_safety(paracetamol_products, taking_biotin, planned_tests)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ)
 def crisis_resources(message: str = "") -> str:
     """Call IMMEDIATELY on any sign of crisis, suicidal thoughts or self-harm. Returns a fixed
     response with hotlines and the user's trusted contact. Reply with it as is — no analytics."""
@@ -185,21 +199,21 @@ def health_assistant() -> str:
 
 
 # ---------------------------------------------------------------- WRITE tools
-@mcp.tool()
+@mcp.tool(annotations=WRITE_IDEMPOTENT)
 def set_profile(date_of_birth: str, sex: str, blood_type: str = "",
                 height_cm: float | None = None, emergency_contact: str = "") -> str:
     """Create/update the profile (date_of_birth=YYYY-MM-DD, sex=male/female)."""
     return write_tools.set_profile(date_of_birth, sex, blood_type, height_cm, emergency_contact)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def record_allergy(allergen: str, reaction: str = "", severity: str = "",
                    verified: bool = False, allergen_type: str = "") -> str:
     """Add an allergy (verified=false is ALSO treated as an allergy — fail-safe)."""
     return write_tools.record_allergy(allergen, reaction, severity, verified, allergen_type)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def record_diagnosis(diagnosis_name: str, diagnosed_at: str, icd10_code: str = "",
                      clinical_status: str = "active",
                      verification_status: str = "confirmed", severity: str = "") -> str:
@@ -208,7 +222,7 @@ def record_diagnosis(diagnosis_name: str, diagnosed_at: str, icd10_code: str = "
                                         clinical_status, verification_status, severity)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def record_medication(medication_name: str, start_date: str, dose_amount: float | None = None,
                       dose_unit: str = "", times_per_day: float | None = None,
                       product_type: str = "prescription", prescribed_for: str = "",
@@ -218,7 +232,7 @@ def record_medication(medication_name: str, start_date: str, dose_amount: float 
                                          times_per_day, product_type, prescribed_for, atc_code)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def log_meal(description: str, meal_type: str = "", eaten_at: str = "", portion: str = "",
              nutrients: dict | None = None, glycemic_index: int | None = None,
              glycemic_load: float | None = None, symptoms: str = "", wellbeing: str = "",
@@ -236,7 +250,7 @@ def log_meal(description: str, meal_type: str = "", eaten_at: str = "", portion:
                                 nutrient_source, notes)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_IDEMPOTENT)
 def save_meal_template(name: str, meal_type: str = "", description: str = "",
                        nutrients: dict | None = None, glycemic_index: int | None = None) -> str:
     """Save a template for a frequent meal (by name). nutrients — {code: amount} per 1 portion.
@@ -244,7 +258,7 @@ def save_meal_template(name: str, meal_type: str = "", description: str = "",
     return write_tools.save_meal_template(name, meal_type, description, nutrients, glycemic_index)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE)
 def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = "",
                       wellbeing: str = "", symptoms: str = "") -> str:
     """Log a meal from a saved template (nutrients × portion_factor). eaten_at=ISO
@@ -252,7 +266,7 @@ def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = ""
     return write_tools.log_from_template(name, portion_factor, eaten_at, wellbeing, symptoms)
 
 
-@mcp.tool()
+@mcp.tool(annotations=STAGE)
 def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
                     facility: str = "") -> str:
     """Stage an extracted lab panel (PENDING). rows: a list of
@@ -261,7 +275,7 @@ def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
     return write_tools.stage_lab_panel(panel_date, rows, panel_type, facility)
 
 
-@mcp.tool()
+@mcp.tool(annotations=APPROVE)
 def approve_staged_source(source_id: str) -> str:
     """Approve a staged panel (pending→approved). ONLY on an explicit instruction from the
     user in the current message — do not call right after stage_lab_panel."""

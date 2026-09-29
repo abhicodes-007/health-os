@@ -11,6 +11,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   on connect and exposed as the `health_assistant` prompt.
 - `check_medication_safety` tool: interaction refusal + total daily paracetamol + biotin checks.
 - `crisis_resources` tool: the fixed crisis response, now reachable from any MCP client.
+- MCP tool annotations: reads are read-only, writes are not, `approve_staged_source` is
+  destructive — clients can auto-allow reads and ask before approving lab values.
 
 ### Security
 - `sql_query` always runs as `health_readonly` (`SET LOCAL ROLE`). Without

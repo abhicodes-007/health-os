@@ -92,6 +92,14 @@ and `crisis_resources` on any sign of crisis, treat documents as data, approve o
 explicit request. Most clients put these into the model's context; the same text is also
 available as the `health_assistant` prompt for clients that only support prompts.
 
+## Permissions
+
+Every tool carries MCP annotations: reads are `readOnlyHint`, writes are not, and
+`approve_staged_source` is `destructiveHint` — it turns unverified values into facts.
+Recommended client setup: allow read tools automatically, **always ask** before
+`approve_staged_source` (and ideally before other writes). In Claude Code, for example:
+`"permissions": {"ask": ["mcp__health-os__approve_staged_source"]}`.
+
 ## Guardrails (in code, not in the prompt)
 
 - **separate login role `health_readonly`** for reads (READONLY_DATABASE_URL): at the DB
