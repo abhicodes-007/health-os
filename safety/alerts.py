@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -28,9 +29,16 @@ _TELEGRAM_GENERIC = ("⚠️ Health OS: a critical value in today's data — "
 
 
 def _log(title: str, message: str) -> None:
-    _LOG.parent.mkdir(parents=True, exist_ok=True)
-    with _LOG.open("a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().isoformat()}\t{title}\t{message}\n")
+    line = f"{datetime.now().isoformat()}\t{title}\t{message}"
+    # stderr too: MCP clients keep the server's stderr in their logs, and in a `docker run --rm`
+    # container the log file disappears with the container
+    print(f"[health-os ALERT] {line}", file=sys.stderr, flush=True)
+    try:
+        _LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _LOG.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass  # read-only FS / permissions: must not break ingestion; stderr already has it
 
 
 def _macos_notify(title: str, message: str) -> bool:

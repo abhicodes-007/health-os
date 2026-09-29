@@ -55,3 +55,15 @@ def test_narrative_no_alert_on_clean_text():
     hits = narrative_flags.check_and_alert("Патології не виявлено.", alerter=fake)
     assert hits == []
     assert fake.calls == []
+
+
+def test_alert_log_failure_does_not_break_delivery(monkeypatch, tmp_path, capsys):
+    from safety import alerts
+
+    blocked = tmp_path / "ro"
+    blocked.write_text("")                       # a file where a directory is expected
+    monkeypatch.setattr(alerts, "_LOG", blocked / "alerts.log")
+    monkeypatch.setattr(alerts, "_macos_notify", lambda *a: False)
+    monkeypatch.setattr(alerts, "_telegram_send", lambda *a: False)
+    assert alerts.send_critical_alert("t", "potassium 6.8") == ["log"]
+    assert "potassium 6.8" in capsys.readouterr().err
