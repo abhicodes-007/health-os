@@ -29,7 +29,7 @@ In scope, for example:
 - secrets or medical data ending up in logs, alerts or git.
 
 Out of scope: vulnerabilities in the MCP client or model you connect, and setups that expose
-Postgres or Open WebUI to a network (the defaults bind to localhost only).
+Postgres to a network (the default binds to localhost only).
 
 ## Hardening checklist for users
 

@@ -1,11 +1,7 @@
-.PHONY: setup start stop restart logs pull-model test test-unit test-integration lint
-
-setup:
-	@bash setup.sh
+.PHONY: start stop restart logs test test-unit test-integration lint
 
 start:
 	@docker compose up -d
-	@echo "WebUI → http://localhost:3000"
 
 stop:
 	@docker compose down
@@ -14,9 +10,6 @@ restart: stop start
 
 logs:
 	@docker compose logs -f
-
-pull-model:
-	@ollama pull $(MODEL)
 
 test:
 	@uv run pytest -q

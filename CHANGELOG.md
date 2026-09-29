@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Removed
+- Open WebUI service, `setup.sh` (Ollama install + model pull), `make setup`/`pull-model` and a
+  machine-specific Ollama reinstall script: they were never connected to health-os, so the
+  "fully local stack" did not actually work. Local-model clients remain an open topic (#9).
+
 ### Changed
 - Migrated to the MCP Python SDK 2.x (`FastMCP` → `MCPServer`); requires `mcp>=2.2,<3`.
 
