@@ -1,7 +1,9 @@
 name: docker
 
-# Publishes the MCP server image to ghcr.io/andronaft/health-os (used by the MCP Registry entry
-# in server.json). Runs on every GitHub release; can also be started by hand.
+# On every GitHub release: build + push the MCP server image to ghcr.io/andronaft/health-os,
+# then publish the new version to the official MCP Registry (GitHub OIDC — no secrets).
+# Started by hand, it only rebuilds the image (the registry rejects re-publishing a version).
+# The version comes from pyproject.toml; server.json is updated from it here.
 on:
   release:
     types: [published]
@@ -10,6 +12,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write   # MCP Registry login via GitHub OIDC
 
 jobs:
   publish:
@@ -20,11 +23,6 @@ jobs:
       - name: Version from pyproject.toml
         id: v
         run: echo "version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: server.json must point at this version
-        run: |
-          grep -q "\"version\": \"${{ steps.v.outputs.version }}\"" server.json
-          grep -q "ghcr.io/andronaft/health-os:${{ steps.v.outputs.version }}\"" server.json
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -48,3 +46,17 @@ jobs:
           docker run --rm -i -e DATABASE_URL=postgresql+psycopg://x:x@127.0.0.1:1/x \
             ghcr.io/andronaft/health-os:${{ steps.v.outputs.version }} \
             python -c "import asyncio; from mcp_server.server import mcp; n=len(asyncio.run(mcp.list_tools())); print(n, 'tools'); assert n >= 28"
+
+      - name: Set version in server.json
+        run: |
+          V=${{ steps.v.outputs.version }}
+          jq --arg v "$V" '.version = $v | .packages[0].identifier = "ghcr.io/andronaft/health-os:" + $v' \
+            server.json > server.tmp && mv server.tmp server.json
+          cat server.json
+
+      - name: Publish to the MCP Registry
+        if: github.event_name == 'release'
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

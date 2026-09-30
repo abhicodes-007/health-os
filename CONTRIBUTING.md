@@ -31,6 +31,13 @@ checked. A row without `value_canonical` is invisible to trends and analytics (#
 already imported data directly, `python -m scripts.recompute_canonical` fills it in; the weekly
 report's `approved_without_canonical` should stay at 0.
 
+## Releasing (maintainer)
+
+1. Bump `version` in `pyproject.toml`, run `uv lock`, move the `CHANGELOG.md` entries under the new version.
+2. Merge to `main` with green CI, then create a GitHub release with tag `vX.Y.Z`.
+3. The `docker` workflow builds and pushes `ghcr.io/andronaft/health-os:X.Y.Z`, sets the version in
+   `server.json` and publishes it to the official MCP Registry (GitHub OIDC, no secrets).
+
 ## Privacy — no real medical data
 
 Never include real medical data (yours or anyone else's) in issues, pull requests, test
