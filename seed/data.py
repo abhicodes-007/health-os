@@ -404,3 +404,17 @@ NUTRIENT_TYPES = [
     ("caffeine", "Кофеїн", "Caffeine", "mg", "other", None, 400, 400),
     ("alcohol", "Алкоголь", "Alcohol", "g", "other", None, 28, 410),
 ]
+
+
+# ---- extension: Spanish / Western-European lab forms (see seed/lab_catalog_es.py) --------
+def _merge_catalog_extension() -> None:
+    from seed import lab_catalog_es as ext
+
+    known = {t[0] for t in OBSERVATION_TYPES}
+    OBSERVATION_TYPES.extend(t for t in ext.TYPES if t[0] not in known)
+    for code, syns in ext.SYNONYMS.items():
+        SYNONYMS.setdefault(code, []).extend(syns)
+    UNIT_CONVERSIONS.extend(ext.CONVERSIONS)
+
+
+_merge_catalog_extension()

@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added
+- Catalog extension for Spanish / Western-European lab forms (`seed/lab_catalog_es.py`): 69 new
+  marker types (bilirubin fractions, eGFR, NT-proBNP, iron panel, coagulation, thrombophilia,
+  autoimmunity, coeliac, urinalysis, hepatitis/HIV serology, viral PCR, stool tests), Spanish
+  synonyms for existing markers, dimension-exact conversions (mg/dL→g/L, g/dL→g/L, mU/L, µg/dL…).
+- Name lookup strips Latin accents ("Fósforo" = "fosforo"); Cyrillic letters are kept intact.
+
 ### Removed
 - Open WebUI service, `setup.sh` (Ollama install + model pull), `make setup`/`pull-model` and a
   machine-specific Ollama reinstall script: they were never connected to health-os, so the

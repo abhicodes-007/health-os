@@ -13,6 +13,7 @@ Unit conversion is analyte-specific (canonical = value*factor + add_offset).
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -21,9 +22,20 @@ _DASHES = dict.fromkeys(map(ord, "–—−‒―"), "-")
 _WS = re.compile(r"\s+")
 
 
+def _strip_latin_accents(s: str) -> str:
+    """"Fósforo" → "Fosforo", but keep Cyrillic intact ("й", "ї" also decompose in NFD)."""
+    out = []
+    for ch in unicodedata.normalize("NFD", s):
+        if unicodedata.combining(ch) and out and out[-1].isascii():
+            continue
+        out.append(ch)
+    return unicodedata.normalize("NFC", "".join(out))
+
+
 def canonicalize(name: str) -> str:
-    """lowercase + ё→е + dash unification + whitespace collapse + trim."""
+    """lowercase + ё→е + Latin accents stripped + dash unification + whitespace collapse + trim."""
     s = name.replace("ё", "е").replace("Ё", "е")
+    s = _strip_latin_accents(s)
     s = s.translate(_DASHES)
     s = _WS.sub(" ", s).strip().lower()
     return s
@@ -47,8 +59,13 @@ _KNOWN_UNITS = [
     "%", "10*9/L", "10*12/L", "mmol/L", "umol/L", "nmol/L", "pmol/L", "g/L", "g/dL", "mg/L",
     "mg/dL", "U/L", "IU/L", "IU/mL", "mIU/L", "mIU/mL", "uIU/mL", "ng/mL", "pg/mL", "ug/L",
     "mEq/L", "mmHg", "bpm", "fL", "pg", "mm/h", "h", "min", "ms", "kg", "g", "cm", "Cel",
-    "degF", "kcal", "/uL", "10*3/uL", "10*6/uL",
+    "degF", "kcal", "/uL", "10*3/uL", "10*6/uL", "ug/dL", "U/mL", "mU/L", "ug/g", "s",
+    "mL/min/1.73m2",
 ]
+# spellings whose key differs from the canonical unit's key (Spanish UI = IU, seg = s)
+_UNIT_ALIASES = {"uui/ml": "uIU/mL", "mui/ml": "mIU/mL", "ui/ml": "IU/mL", "ui/l": "IU/L",
+                 "mui/l": "mIU/L", "seg": "s", "sec": "s", "ml/min/1,73m2": "mL/min/1.73m2",
+                 "ml/min/1.73": "mL/min/1.73m2", "ml/min/1,73": "mL/min/1.73m2"}
 
 
 def _unit_key(unit: str) -> str:
@@ -58,7 +75,7 @@ def _unit_key(unit: str) -> str:
     return _POW10.sub(lambda m: f"10*{m.group(1)}/", k)
 
 
-_UNIT_BY_KEY = {_unit_key(u): u for u in _KNOWN_UNITS}
+_UNIT_BY_KEY = {_unit_key(u): u for u in _KNOWN_UNITS} | _UNIT_ALIASES
 
 
 def canonicalize_unit(unit: str | None) -> str | None:
