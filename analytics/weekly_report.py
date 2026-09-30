@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
+from core.recompute import count_missing_canonical
+
 
 def build(conn, user_id: str, days: int = 7) -> dict:
     new_values = conn.execute(
@@ -67,6 +69,8 @@ def build(conn, user_id: str, days: int = 7) -> dict:
         "nutrition": nutrition_block,
         "system_health": {
             "pending_queue": pending_q,
+            # approved numbers invisible to trends/analytics (#11) — should be 0
+            "approved_without_canonical": count_missing_canonical(conn, user_id),
             "corrected_ratio": round(corrected_ratio, 3),
             "note": ("Pending queue is large — risk of 'rubber-stamp ok' (kill criterion)."
                      if (pending_q or 0) >= 10 else "Pending queue is normal."),

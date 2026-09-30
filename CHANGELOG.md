@@ -50,6 +50,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   and could read unapproved values, the audit log and files on the database server.
 
 ### Fixed
+- Approved values without a canonical value silently dropped out of trends and analytics (#11):
+  dimensionless markers (INR, ratios, indices) now get one; `approve_staged_source` refuses
+  unconvertible numeric values unless `allow_missing_canonical=true`; new
+  `scripts/recompute_canonical.py` fills in old rows (dry-run by default); the weekly report
+  shows `approved_without_canonical`.
 - `query_nutrition` had its own copy of the flag logic and still reported low sugar/sodium as
   deficient; it now uses the same `analytics.nutrition.summarize` as `nutrition_report`.
 - The safety layer described in the README was not reachable over MCP: the system prompt was

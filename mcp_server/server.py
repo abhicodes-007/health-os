@@ -275,10 +275,12 @@ def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
 
 
 @mcp.tool(annotations=APPROVE)
-def approve_staged_source(source_id: str) -> str:
+def approve_staged_source(source_id: str, allow_missing_canonical: bool = False) -> str:
     """Approve a staged panel (pending→approved). ONLY on an explicit instruction from the
-    user in the current message — do not call right after stage_lab_panel."""
-    return write_tools.approve_staged_source(source_id)
+    user in the current message — do not call right after stage_lab_panel.
+    Refuses when numeric values have an unconvertible unit (they'd be invisible to trends);
+    allow_missing_canonical=true only if the user accepts that."""
+    return write_tools.approve_staged_source(source_id, allow_missing_canonical)
 
 
 if __name__ == "__main__":

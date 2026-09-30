@@ -479,12 +479,35 @@ def _check_panel_duplicate(conn, user_id: str, panel_date, facility_id, rows: li
     return {"panel_id": dup.panel_id, "reason": dup.reason} if dup else None
 
 
-def approve_staged(conn, user_id: str, source_id: str) -> dict:
+def approve_staged(conn, user_id: str, source_id: str, *,
+                   allow_missing_canonical: bool = False) -> dict:
     """Approves a staging (a separate explicit user action, guardrail plan 4.2).
 
     Moves the source and all its pending observations to 'approved'. Critical values
     keep status='critical' but become visible in the approved view after confirmation.
+
+    Numeric rows without a canonical value (unit gate failed) would drop out of trends and
+    analytics for good (#11), so they block the approval unless explicitly allowed.
     """
+    missing = conn.execute(
+        text(
+            """SELECT ot.code, o.value_numeric, o.unit
+               FROM observations o JOIN observation_types ot ON ot.id = o.type_id
+               WHERE o.source_id=:sid AND o.user_id=:u AND o.review_status='pending'
+                 AND o.deleted_at IS NULL AND o.value_numeric IS NOT NULL
+                 AND o.value_canonical IS NULL"""
+        ),
+        {"sid": source_id, "u": user_id},
+    ).mappings().all()
+    if missing and not allow_missing_canonical:
+        return {
+            "approved_observations": 0, "source_id": source_id,
+            "blocked_without_canonical": [
+                f"{m['code']} {m['value_numeric']:g} {m['unit'] or '(no unit)'}" for m in missing],
+            "hint": "These values have a unit that can't be converted, so they would never show "
+                    "up in trends. Fix the unit (or add a conversion) and re-stage, or approve "
+                    "with allow_missing_canonical=true if that's acceptable.",
+        }
     n = conn.execute(
         text(
             """UPDATE observations SET review_status='approved'
@@ -498,4 +521,7 @@ def approve_staged(conn, user_id: str, source_id: str) -> dict:
              "reviewed_at=now() WHERE id=:sid AND user_id=:u"),
         {"sid": source_id, "u": user_id},
     )
-    return {"approved_observations": n, "source_id": source_id}
+    out = {"approved_observations": n, "source_id": source_id}
+    if missing:
+        out["approved_without_canonical"] = len(missing)
+    return out

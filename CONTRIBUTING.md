@@ -23,6 +23,14 @@ uv run ruff check .
 New tests that need the database should use the `conn` / `user_id` fixtures (they are marked
 `integration` automatically) or set `pytestmark = pytest.mark.integration`.
 
+## Writing an importer
+
+Store observations through `core.services.ingest_observation` (or `stage_panel` for lab panels),
+not with raw `INSERT`s: that is where names are mapped, units converted and critical values
+checked. A row without `value_canonical` is invisible to trends and analytics (#11). If you
+already imported data directly, `python -m scripts.recompute_canonical` fills it in; the weekly
+report's `approved_without_canonical` should stay at 0.
+
 ## Privacy — no real medical data
 
 Never include real medical data (yours or anyone else's) in issues, pull requests, test

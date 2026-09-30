@@ -157,7 +157,11 @@ def normalize(raw_name: str, value: float | None, unit: str | None, conn) -> Nor
     value_canonical: float | None = None
     conversion_missing = False
 
-    if value is not None and canonical_unit is not None:
+    if value is not None and canonical_unit is None:
+        # dimensionless type (INR, ratios, indices, titres): nothing to convert — without this
+        # the row never gets a canonical value and silently drops out of trends (#11)
+        value_canonical = value
+    elif value is not None and canonical_unit is not None:
         if unit is None:
             conversion_missing = True            # no unit → the value cannot be mapped
         else:

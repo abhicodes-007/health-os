@@ -147,10 +147,11 @@ def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
     return _j(out)
 
 
-def approve_staged_source(source_id: str) -> str:
+def approve_staged_source(source_id: str, allow_missing_canonical: bool = False) -> str:
     """Approve a staged panel/source (a SEPARATE explicit action — only on a direct instruction
     from the user in the current message). Moves pending → approved."""
     with engine.begin() as conn:
         uid = get_or_create_user(conn)
-        out = approve_staged(conn, uid, source_id)
+        out = approve_staged(conn, uid, source_id,
+                             allow_missing_canonical=allow_missing_canonical)
     return _j(out)
