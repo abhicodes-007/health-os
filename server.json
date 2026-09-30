@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.andronaft/health-os",
+  "title": "health-os",
+  "description": "Local-first personal health record: labs, meds, wearables, food log, deterministic safety checks",
+  "version": "0.2.0",
+  "websiteUrl": "https://github.com/andronaft/health-os",
+  "repository": {
+    "url": "https://github.com/andronaft/health-os",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/andronaft/health-os:0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DATABASE_URL",
+          "description": "PostgreSQL 16 + pgvector connection string, e.g. postgresql+psycopg://health:PASSWORD@host.docker.internal:5432/health_os. Run migrations and seed first (see README).",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "READONLY_DATABASE_URL",
+          "description": "Optional: connection as the health_readonly role for DB-level read isolation.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

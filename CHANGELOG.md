@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Added
+- Docker image published to `ghcr.io/andronaft/health-os` (amd64 + arm64) on every release, with
+  the MCP Registry ownership label; `server.json` manifest for the official MCP Registry.
+
 ## [0.2.0] — 2026-09-30
 
 ### Security

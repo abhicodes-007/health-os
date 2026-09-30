@@ -1,0 +1,50 @@
+name: docker
+
+# Publishes the MCP server image to ghcr.io/andronaft/health-os (used by the MCP Registry entry
+# in server.json). Runs on every GitHub release; can also be started by hand.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version from pyproject.toml
+        id: v
+        run: echo "version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: server.json must point at this version
+        run: |
+          grep -q "\"version\": \"${{ steps.v.outputs.version }}\"" server.json
+          grep -q "ghcr.io/andronaft/health-os:${{ steps.v.outputs.version }}\"" server.json
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/andronaft/health-os:${{ steps.v.outputs.version }}
+            ghcr.io/andronaft/health-os:latest
+
+      - name: Smoke test — the server starts and lists its tools over stdio
+        run: |
+          docker run --rm -i -e DATABASE_URL=postgresql+psycopg://x:x@127.0.0.1:1/x \
+            ghcr.io/andronaft/health-os:${{ steps.v.outputs.version }} \
+            python -c "import asyncio; from mcp_server.server import mcp; n=len(asyncio.run(mcp.list_tools())); print(n, 'tools'); assert n >= 28"
