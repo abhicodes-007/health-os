@@ -50,6 +50,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   and could read unapproved values, the audit log and files on the database server.
 
 ### Fixed
+- Scheduled backups never ran on macOS when the checkout lives in ~/Desktop or ~/Documents:
+  launchd jobs can't read those folders ("Operation not permitted"). New
+  `scripts/install_launchd.sh` installs the backup + restore-test jobs outside them; the scripts
+  take `HEALTH_OS_ENV_FILE` / `HEALTH_OS_STATE_DIR`. The plist templates are replaced by it.
 - Approved values without a canonical value silently dropped out of trends and analytics (#11):
   dimensionless markers (INR, ratios, indices) now get one; `approve_staged_source` refuses
   unconvertible numeric values unless `allow_missing_canonical=true`; new

@@ -6,7 +6,9 @@ set -euo pipefail
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-[ -f .env ] && set -a && . ./.env && set +a
+ENV_FILE="${HEALTH_OS_ENV_FILE:-.env}"
+STATE="${HEALTH_OS_STATE_DIR:-data}"
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 
 CONTAINER="${POSTGRES_CONTAINER:-health_os_db}"
 PG_USER="${POSTGRES_USER:-health}"
@@ -22,7 +24,7 @@ if [ -n "${RESTIC_REPOSITORY:-}" ] && [ -n "${RESTIC_PASSWORD:-}" ] && [ -d "${R
   DUMP="$(find "$TMPDIR" -name 'pg_*.dump' | sort | tail -1)"
 else
   echo "[1/5] зовнішній диск недоступний — беру останній ЛОКАЛЬНИЙ дамп…"
-  DUMP="$(ls -1t data/backups/pg_*.dump 2>/dev/null | head -1)"
+  DUMP="$(ls -1t "$STATE"/backups/pg_*.dump 2>/dev/null | head -1)"
 fi
 [ -n "${DUMP:-}" ] && [ -f "$DUMP" ] || { echo "ПОМИЛКА: дамп не знайдено"; exit 1; }
 echo "  Дамп: $DUMP ($(du -h "$DUMP" | cut -f1))"
@@ -62,7 +64,7 @@ if [ "${CNT:-0}" -gt 0 ]; then
   echo "   observations       : $OBS"
   echo "   physical_activities: $ACT"
   echo "   diagnoses          : $DX"
-  echo "$TS OK obs=$OBS act=$ACT dx=$DX" >> "${ROOT}/data/restore_test.log"
+  echo "$TS OK obs=$OBS act=$ACT dx=$DX" >> "$STATE/restore_test.log"
 else
   echo "❌ RESTORE FAILED [$TS] — порожня база"; exit 1
 fi

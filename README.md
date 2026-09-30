@@ -106,7 +106,7 @@ MCP client (local or cloud model)
 | `migrations/` | Alembic schema |
 | `seed/` | reference catalog + the demo patient |
 | `evals/` | red-team scenarios (injections, hidden critical values, unit tricks) |
-| `scripts/` | backup/restore (restic + launchd), read-only role setup, importers |
+| `scripts/` | backup/restore (restic; `install_launchd.sh` schedules them on macOS), read-only role setup, importers |
 
 ## Privacy / local-first
 
