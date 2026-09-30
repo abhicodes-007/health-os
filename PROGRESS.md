@@ -1,7 +1,9 @@
-# Health OS — progress log
+# Health OS — progress log (archived)
 
-Canonical plan: `../health_system_plan.md` (v3). This file is the phase-by-phase execution tracker.
-Update it every work session.
+> **Archived.** This is the original phase-by-phase development journal, kept for history and
+> no longer updated after the first public release (2026-09-29). Numbers in it (tests, tools,
+> tables) are from that time. For the current state see [README.md](README.md) and
+> [CHANGELOG.md](CHANGELOG.md). The design plan it refers to is private and not in this repo.
 
 ## Locked-in decisions (as implementation went)
 

@@ -6,28 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
-### Added
-- Catalog extension for Spanish / Western-European lab forms (`seed/lab_catalog_es.py`): 69 new
-  marker types (bilirubin fractions, eGFR, NT-proBNP, iron panel, coagulation, thrombophilia,
-  autoimmunity, coeliac, urinalysis, hepatitis/HIV serology, viral PCR, stool tests), Spanish
-  synonyms for existing markers, dimension-exact conversions (mg/dL→g/L, g/dL→g/L, mU/L, µg/dL…).
-- Name lookup strips Latin accents ("Fósforo" = "fosforo"); Cyrillic letters are kept intact.
+## [0.2.0] — 2026-09-30
 
-### Removed
-- Open WebUI service, `setup.sh` (Ollama install + model pull), `make setup`/`pull-model` and a
-  machine-specific Ollama reinstall script: they were never connected to health-os, so the
-  "fully local stack" did not actually work. Local-model clients remain an open topic (#9).
-
-### Changed
-- Migrated to the MCP Python SDK 2.x (`FastMCP` → `MCPServer`); requires `mcp>=2.2,<3`.
-
-### Added
-- MCP server instructions: the safety rules (`prompts/system_prompt.py`) are sent to every client
-  on connect and exposed as the `health_assistant` prompt.
-- `check_medication_safety` tool: interaction refusal + total daily paracetamol + biotin checks.
-- `crisis_resources` tool: the fixed crisis response, now reachable from any MCP client.
-- MCP tool annotations: reads are read-only, writes are not, `approve_staged_source` is
-  destructive — clients can auto-allow reads and ask before approving lab values.
+### Security
+- `sql_query` always runs as `health_readonly` (`SET LOCAL ROLE`). Without
+  `READONLY_DATABASE_URL` it used to run as the database owner — a superuser in the Docker image —
+  and could read unapproved values, the audit log and files on the database server.
 
 ### Safety
 - **Critical values were silently missed** when a lab printed the unit or name differently:
@@ -44,10 +28,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 - Alert logging can't break ingestion (read-only FS) and also goes to stderr, which MCP clients
   keep (a `docker run --rm` container loses its log file).
 
-### Security
-- `sql_query` always runs as `health_readonly` (`SET LOCAL ROLE`). Without
-  `READONLY_DATABASE_URL` it used to run as the database owner — a superuser in the Docker image —
-  and could read unapproved values, the audit log and files on the database server.
+### Added
+- Catalog extension for Spanish / Western-European lab forms (`seed/lab_catalog_es.py`): 69 new
+  marker types (bilirubin fractions, eGFR, NT-proBNP, iron panel, coagulation, thrombophilia,
+  autoimmunity, coeliac, urinalysis, hepatitis/HIV serology, viral PCR, stool tests), Spanish
+  synonyms for existing markers, dimension-exact conversions (mg/dL→g/L, g/dL→g/L, mU/L, µg/dL…).
+- Name lookup strips Latin accents ("Fósforo" = "fosforo"); Cyrillic letters are kept intact.
+- MCP server instructions: the safety rules (`prompts/system_prompt.py`) are sent to every client
+  on connect and exposed as the `health_assistant` prompt.
+- `check_medication_safety` tool: interaction refusal + total daily paracetamol + biotin checks.
+- `crisis_resources` tool: the fixed crisis response, now reachable from any MCP client.
+- MCP tool annotations: reads are read-only, writes are not, `approve_staged_source` is
+  destructive — clients can auto-allow reads and ask before approving lab values.
+
+### Changed
+- Migrated to the MCP Python SDK 2.x (`FastMCP` → `MCPServer`); requires `mcp>=2.2,<3`.
 
 ### Fixed
 - Scheduled backups never ran on macOS when the checkout lives in ~/Desktop or ~/Documents:
@@ -65,6 +60,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   never sent and the crisis/medication checks had no tools.
 - Demo MCP config uses `docker run -i --rm` instead of `docker compose run`, which left a
   running container behind after every client session.
+
+### Removed
+- Open WebUI service, `setup.sh` (Ollama install + model pull), `make setup`/`pull-model` and a
+  machine-specific Ollama reinstall script: they were never connected to health-os, so the
+  "fully local stack" did not actually work. Local-model clients remain an open topic (#9).
 
 ## [0.1.0] — 2026-09-29
 
@@ -99,5 +99,6 @@ First public release.
 - Postgres and Open WebUI ports bound to `127.0.0.1` by default.
 - Private vulnerability reporting — see [SECURITY.md](SECURITY.md).
 
-[Unreleased]: https://github.com/andronaft/health-os/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/andronaft/health-os/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/andronaft/health-os/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andronaft/health-os/releases/tag/v0.1.0
