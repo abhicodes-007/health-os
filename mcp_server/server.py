@@ -71,21 +71,34 @@ def query_observations(type_code: str, days: int = 365) -> str:
 
 @mcp.tool(annotations=READ)
 def get_timeline(days: int = 3650) -> str:
-    """Chronology of health events (diagnoses, visits, panels, medications, hospitalizations, vaccinations)."""
+    """Chronology of the user's health events: diagnoses, lab panels, visits, medications,
+    hospitalizations, vaccinations — newest first, at most 200 rows of {kind, at, title}.
+    Use it for "what happened when" questions or to orient before a visit. It lists events, not
+    values: for numbers use query_observations, for a marker's direction use get_trend.
+    days: how far back to look (default 3650 ≈ 10 years)."""
     return tools.get_timeline(days)
 
 
 @mcp.tool(annotations=READ)
 def query_food(days: int = 7, meal_type: str = "") -> str:
-    """Food log over N days: meals (gi/gl/wellbeing) + nutrients per meal.
-    Optional meal_type filter (breakfast/lunch/dinner/snack/drink)."""
+    """Food diary entries for the last N days, newest first (max 200 meals): time, meal type,
+    description, portion, glycemic index/load, symptoms and wellbeing after eating, plus the
+    nutrients stored for each meal. Use it to see WHAT was eaten. For daily totals vs norms use
+    query_nutrition; for deficiencies and food↔wellbeing patterns use nutrition_report.
+    days: look-back window (default 7). meal_type: optional filter —
+    breakfast / lunch / dinner / snack / drink."""
     return tools.query_food(days, meal_type)
 
 
 @mcp.tool(annotations=READ)
 def query_nutrition(days: int = 7) -> str:
-    """"Healthiness" over N days: average daily intake of each nutrient, %RDA and flags
-    deficient (<70% of norm)/excess (>upper limit). Vitamins, minerals, sodium, sugar, fats."""
+    """Average daily intake of every logged nutrient over the last N days, with %RDA and a
+    flag: "deficient" (<70% of the norm) or "excess" (above the safe upper limit). Averages are
+    per LOGGED day, so incomplete logging understates intake — check days_logged. Limit-only
+    nutrients (sugar, added sugar, saturated fat, sodium, cholesterol) are never flagged as
+    deficient. Use for "am I getting enough X"; for a ranked summary with food↔wellbeing
+    associations use nutrition_report; for the meals themselves use query_food.
+    days: look-back window (default 7)."""
     return tools.query_nutrition(days)
 
 
@@ -104,26 +117,38 @@ def list_meal_templates() -> str:
 
 @mcp.tool(annotations=READ)
 def get_medications() -> str:
-    """Current medications with doses (status='taking')."""
+    """Medications and supplements the user is currently taking (status "taking"): name, dose,
+    unit, times per day, route, product type (prescription / otc / supplement / herbal).
+    Use it before any medication question — then call check_medication_safety; never suggest
+    dose changes. To add one use record_medication."""
     return tools.get_medications()
 
 
 @mcp.tool(annotations=READ)
 def get_diagnoses() -> str:
-    """Diagnoses with two status axes (clinical_status + verification_status).
-    Advice — only on confirmed; suspected — in question."""
+    """All recorded diagnoses with two independent status axes: clinical_status
+    (active / resolved / …) and verification_status (confirmed / provisional / suspected /
+    differential / refuted), plus date and ICD-10 code. Base advice only on confirmed diagnoses;
+    present suspected/provisional ones as open questions and ignore refuted ones. Use this for
+    "what am I diagnosed with"; get_health_summary already includes the active ones briefly."""
     return tools.get_diagnoses()
 
 
 @mcp.tool(annotations=READ)
 def get_allergies() -> str:
-    """Allergies, including unverified (fail-safe: treated as an allergy)."""
+    """All recorded allergies: allergen, reaction, severity and whether it is verified.
+    Unverified allergies must still be treated as real (fail-safe) — never suggest an allergen
+    because it is "unverified". Use before any discussion of foods or medications; to add one
+    use record_allergy."""
     return tools.get_allergies()
 
 
 @mcp.tool(annotations=READ)
 def list_pending_reviews() -> str:
-    """Markers in the review queue (NOT confirmed — do not cite as fact)."""
+    """Lab values that were staged (stage_lab_panel) but NOT yet approved by the user —
+    marker, value, unit, date and status, each marked "PENDING — unverified". Never cite these as
+    facts or use them in trends; show them so the user can compare with the original report and
+    then approve via approve_staged_source. Approved values are read with query_observations."""
     return tools.list_pending_reviews()
 
 
@@ -145,28 +170,48 @@ def get_screening_recommendations() -> str:
 
 @mcp.tool(annotations=READ)
 def get_trend(type_code: str, days: int = 1825) -> str:
-    """Marker trend (Mann-Kendall): increasing/decreasing/no_trend + significance."""
+    """Statistical trend of one marker over time (Mann-Kendall test + slope) on approved values:
+    direction increasing / decreasing / no_trend with z, p-value and slope per measurement.
+    Needs at least 5 values in the window, otherwise returns no_trend with the reason.
+    Use for "is X going up/down"; for the raw values use query_observations.
+    type_code: catalog code such as ldl, hemoglobin, vitamin_d, resting_hr, hrv (as returned by
+    query_observations / sql_query on v_observations). days: window (default 1825 ≈ 5 years)."""
     return tools.get_trend(type_code, days)
 
 
 @mcp.tool(annotations=READ)
 def prepare_doctor_visit(specialty: str = "") -> str:
-    """Preparation package for a visit: summary + recent abnormalities + screening due + pending queue."""
+    """One-call briefing to take to a doctor: the deterministic health summary, the latest
+    abnormal approved values (high/low/critical, up to 15), screenings that are due or overdue,
+    the number of values awaiting review, and a disclaimer. Use before an appointment or when
+    the user asks "what should I tell my doctor". specialty: optional label echoed in the output
+    (content is not filtered by specialty yet)."""
     return tools.prepare_doctor_visit(specialty)
 
 
 @mcp.tool(annotations=READ)
 def get_weekly_report() -> str:
-    """Deterministic weekly report + health metrics of the system itself (pending-queue size)."""
+    """Deterministic report for the last 7 days: newly added values, abnormal approved values,
+    top nutrient deficiencies/excesses from the food log, and system health (review-queue size,
+    share of corrected extractions, approved values missing a canonical value). Use for a weekly
+    check-in; for a single marker use get_trend, for a visit use prepare_doctor_visit."""
     return tools.get_weekly_report()
 
 
-@mcp.tool(annotations=READ)
-def sql_query(sql: str) -> str:
-    """Arbitrary READ-ONLY SELECT over approved-views (read-only tx + timeout 5s).
+_SQL_QUERY_DESCRIPTION = """Run a custom read-only SQL query (one SELECT or WITH … SELECT) over the
+approved views when no other tool answers the question — e.g. comparing several markers, custom
+date filters or aggregates. Runs as a view-only database role in a read-only transaction with a
+5 s timeout; returns at most 200 rows (`truncated` tells you if there were more). Base tables,
+pending values and writes are not accessible. Prefer the dedicated tools (query_observations,
+get_trend, query_food…) when they fit.
 
-    Schema and examples:
-    """ + "\n" + _SCHEMA_HINT
+""" + _SCHEMA_HINT
+
+
+# The description is built from the schema hint, so it is passed explicitly: a concatenated
+# string is not a docstring, and the tool used to reach clients with no description at all.
+@mcp.tool(annotations=READ, description=_SQL_QUERY_DESCRIPTION)
+def sql_query(sql: str) -> str:
     return tools.sql_query(sql)
 
 
@@ -201,14 +246,21 @@ def health_assistant() -> str:
 @mcp.tool(annotations=WRITE_IDEMPOTENT)
 def set_profile(date_of_birth: str, sex: str, blood_type: str = "",
                 height_cm: float | None = None, emergency_contact: str = "") -> str:
-    """Create/update the profile (date_of_birth=YYYY-MM-DD, sex=male/female)."""
+    """Create or update the user's profile. Needed by age/sex-dependent features: reference
+    ranges, screening calendar, risk calculators. date_of_birth: YYYY-MM-DD; sex: male / female;
+    blood_type: e.g. A+ (optional); height_cm (optional); emergency_contact: name and phone of a
+    trusted person (optional — crisis_resources shows it). Calling again overwrites the profile."""
     return write_tools.set_profile(date_of_birth, sex, blood_type, height_cm, emergency_contact)
 
 
 @mcp.tool(annotations=WRITE)
 def record_allergy(allergen: str, reaction: str = "", severity: str = "",
                    verified: bool = False, allergen_type: str = "") -> str:
-    """Add an allergy (verified=false is ALSO treated as an allergy — fail-safe)."""
+    """Add an allergy the user reports (stored immediately as approved, with manual provenance).
+    allergen: what causes it (e.g. penicillin); reaction: e.g. rash, anaphylaxis; severity:
+    mild / moderate / severe; verified: true only if confirmed by a doctor or test — unverified
+    allergies are still treated as real; allergen_type: drug / food / environmental / other.
+    Check get_allergies first to avoid duplicates."""
     return write_tools.record_allergy(allergen, reaction, severity, verified, allergen_type)
 
 
@@ -216,7 +268,12 @@ def record_allergy(allergen: str, reaction: str = "", severity: str = "",
 def record_diagnosis(diagnosis_name: str, diagnosed_at: str, icd10_code: str = "",
                      clinical_status: str = "active",
                      verification_status: str = "confirmed", severity: str = "") -> str:
-    """Add a diagnosis (verification_status: suspected/…/confirmed/refuted; advice only on confirmed)."""
+    """Add a diagnosis (stored immediately as approved, with manual provenance).
+    diagnosis_name: as written by the doctor; diagnosed_at: YYYY-MM-DD; icd10_code: optional;
+    clinical_status: active (default) / resolved; verification_status: confirmed
+    (default) / provisional / suspected / differential / refuted — use suspected or provisional
+    for anything not confirmed by a doctor; severity: optional. Check get_diagnoses first to
+    avoid duplicates."""
     return write_tools.record_diagnosis(diagnosis_name, diagnosed_at, icd10_code,
                                         clinical_status, verification_status, severity)
 
@@ -226,7 +283,12 @@ def record_medication(medication_name: str, start_date: str, dose_amount: float 
                       dose_unit: str = "", times_per_day: float | None = None,
                       product_type: str = "prescription", prescribed_for: str = "",
                       atc_code: str = "") -> str:
-    """Add current medications/supplements (product_type: prescription/otc/supplement/herbal)."""
+    """Add a medication or supplement the user currently takes (stored immediately as
+    approved). medication_name: brand or generic; start_date: YYYY-MM-DD; dose_amount + dose_unit
+    (e.g. 1000 + mg) and times_per_day — record these whenever known, check_medication_safety
+    uses them (e.g. total daily paracetamol); product_type: prescription (default) / otc /
+    supplement / herbal; prescribed_for: optional reason; atc_code: optional. Never use this to
+    change a prescribed dose — that is for the doctor."""
     return write_tools.record_medication(medication_name, start_date, dose_amount, dose_unit,
                                          times_per_day, product_type, prescribed_for, atc_code)
 
@@ -252,16 +314,21 @@ def log_meal(description: str, meal_type: str = "", eaten_at: str = "", portion:
 @mcp.tool(annotations=WRITE_IDEMPOTENT)
 def save_meal_template(name: str, meal_type: str = "", description: str = "",
                        nutrients: dict | None = None, glycemic_index: int | None = None) -> str:
-    """Save a template for a frequent meal (by name). nutrients — {code: amount} per 1 portion.
-    Then logged in one call via log_from_template(name)."""
+    """Save (or overwrite) a reusable template for a meal eaten often, so it can later be logged
+    in one call with log_from_template. name: short unique key (e.g. "oatmeal"); meal_type:
+    breakfast / lunch / dinner / snack / drink; description: what it contains; nutrients:
+    {nutrient_code: amount} for ONE portion, same codes as log_meal (energy_kcal, protein, fiber,
+    sodium, vitamin_c, …); glycemic_index: optional. See list_meal_templates for existing ones."""
     return write_tools.save_meal_template(name, meal_type, description, nutrients, glycemic_index)
 
 
 @mcp.tool(annotations=WRITE)
 def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = "",
                       wellbeing: str = "", symptoms: str = "") -> str:
-    """Log a meal from a saved template (nutrients × portion_factor). eaten_at=ISO
-    (default — now). Quick entry of frequent meals in one call."""
+    """Log a meal from a saved template in one call: copies the template's nutrients multiplied
+    by portion_factor (1.0 = one portion, 1.5 = one and a half). name: template name (see
+    list_meal_templates); eaten_at: 'YYYY-MM-DD HH:MM' (default now); wellbeing / symptoms: the
+    user's state after eating (optional). For a meal without a template use log_meal."""
     return write_tools.log_from_template(name, portion_factor, eaten_at, wellbeing, symptoms)
 
 

@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed
+- `sql_query` reached MCP clients with no description at all (its docstring was a concatenated
+  string), so models never saw what it does or the view schema.
+
+### Changed
+- Clearer tool descriptions: when to use each tool vs. its neighbours, parameter formats and
+  what is returned (17 tools).
+
 ### Added
 - Docker image published to `ghcr.io/andronaft/health-os` (amd64 + arm64) on every release, with
   the MCP Registry ownership label; `server.json` manifest for the official MCP Registry.

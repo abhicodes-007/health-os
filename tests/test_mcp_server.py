@@ -60,3 +60,13 @@ def test_every_tool_is_annotated_for_client_permissions():
     # approving turns unverified values into facts → clients should always confirm
     assert tools["approve_staged_source"].destructive_hint is True
     assert tools["crisis_resources"].read_only_hint and tools["sql_query"].read_only_hint
+
+
+def test_every_tool_has_a_real_description():
+    # sql_query once reached clients with NO description: its docstring was a concatenated
+    # string, which Python does not treat as a docstring
+    short = {t.name: len(t.description or "") for t in asyncio.run(mcp.list_tools())
+             if len((t.description or "").strip()) < 60}
+    assert not short, short
+    sql = next(t for t in asyncio.run(mcp.list_tools()) if t.name == "sql_query")
+    assert "v_observations" in sql.description   # the schema hint reaches the model
