@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-01
+
 ### Fixed
 - `sql_query` reached MCP clients with no description at all (its docstring was a concatenated
   string), so models never saw what it does or the view schema.
@@ -17,6 +19,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 ### Added
 - Docker image published to `ghcr.io/andronaft/health-os` (amd64 + arm64) on every release, with
   the MCP Registry ownership label; `server.json` manifest for the official MCP Registry.
+- Releases publish to the official MCP Registry automatically (GitHub OIDC, no stored secrets);
+  the release steps are in CONTRIBUTING.md.
 
 ## [0.2.0] — 2026-09-30
 
@@ -111,6 +115,7 @@ First public release.
 - Postgres and Open WebUI ports bound to `127.0.0.1` by default.
 - Private vulnerability reporting — see [SECURITY.md](SECURITY.md).
 
-[Unreleased]: https://github.com/andronaft/health-os/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/andronaft/health-os/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/andronaft/health-os/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/andronaft/health-os/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andronaft/health-os/releases/tag/v0.1.0
