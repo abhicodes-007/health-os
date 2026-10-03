@@ -22,6 +22,7 @@ from core.services import (
     upsert_profile,
 )
 from core.services import log_from_template as _svc_log_from_template
+from core.services import map_pending_observation as _svc_map_pending
 from core.services import save_meal_template as _svc_save_meal_template
 from safety.alerts import send_critical_alert
 
@@ -144,6 +145,18 @@ def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
         uid = get_or_create_user(conn)
         out = stage_panel(conn, uid, panel_date, rows, panel_type=panel_type or None,
                           facility=facility or None, alerter=send_critical_alert)
+    return _j(out)
+
+
+def map_pending_observation(observation_id: str, type_code: str,
+                            learn_synonym: bool = True) -> str:
+    """Assign a marker type to a pending row (unmapped or matched to the wrong type), after the
+    user confirmed which marker it is. Re-normalizes the value, re-checks critical values and
+    saves the printed name as a learned synonym. The row stays pending until approve."""
+    with engine.begin() as conn:
+        uid = get_or_create_user(conn)
+        out = _svc_map_pending(conn, uid, observation_id, type_code,
+                               learn_synonym=learn_synonym, alerter=send_critical_alert)
     return _j(out)
 
 

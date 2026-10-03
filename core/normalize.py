@@ -77,6 +77,28 @@ def _unit_key(unit: str) -> str:
 
 _UNIT_BY_KEY = {_unit_key(u): u for u in _KNOWN_UNITS} | _UNIT_ALIASES
 
+# Coarse dimension of a canonical unit spelling. Units in different groups can never be converted
+# into each other, so a missing conversion between them means the name matched the wrong type
+# (e.g. a bare leukocyte name mapped to the % type, printed in 10^9/L) — not a missing factor.
+# Molar, mass and activity concentrations share one group: some analytes convert between them.
+_DIMENSIONS = {
+    "fraction": ["%"],
+    "count": ["10*9/L", "10*12/L", "/uL", "10*3/uL", "10*6/uL"],
+    "concentration": ["mmol/L", "umol/L", "nmol/L", "pmol/L", "mEq/L", "g/L", "g/dL", "mg/L",
+                      "mg/dL", "ng/mL", "pg/mL", "ug/L", "ug/dL", "U/L", "IU/L", "IU/mL",
+                      "mIU/L", "mIU/mL", "uIU/mL", "U/mL", "mU/L"],
+    "pressure": ["mmHg"], "rate": ["bpm"], "volume": ["fL"], "mass": ["pg", "g", "kg"],
+    "length": ["cm"], "temperature": ["Cel", "degF"], "time": ["h", "min", "ms", "s"],
+    "energy": ["kcal"], "sedimentation": ["mm/h"], "filtration": ["mL/min/1.73m2"],
+}
+_DIMENSION_OF = {u: d for d, units in _DIMENSIONS.items() for u in units}
+
+
+def units_incompatible(unit: str | None, canonical_unit: str | None) -> bool:
+    """True only when both units are recognized and belong to different dimensions."""
+    a, b = _DIMENSION_OF.get(canonicalize_unit(unit) or ""), _DIMENSION_OF.get(canonical_unit or "")
+    return a is not None and b is not None and a != b
+
 
 def canonicalize_unit(unit: str | None) -> str | None:
     """Map a unit as printed on a form to its canonical spelling; unknown → stripped original."""
@@ -96,6 +118,7 @@ class NormResult:
     synonym_origin: str | None          # 'seed' | 'learned'
     unknown_type: bool
     conversion_missing: bool            # unit gate triggered (mapping forbidden)
+    dimension_mismatch: bool = False    # the unit can't belong to this type → likely wrong type
 
     @property
     def ok(self) -> bool:
@@ -179,6 +202,7 @@ def normalize(raw_name: str, value: float | None, unit: str | None, conn) -> Nor
         synonym_origin=t["origin"],
         unknown_type=False,
         conversion_missing=conversion_missing,
+        dimension_mismatch=conversion_missing and units_incompatible(unit, canonical_unit),
     )
 
 

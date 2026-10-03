@@ -6,6 +6,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+### Fixed
+- Lab rows with a name missing from the catalog were dropped by `stage_lab_panel` (only a note
+  in the response). They are now stored as pending **unmapped** rows (printed name, value, unit,
+  reference range), listed in `list_pending_reviews` and in the health summary's "awaiting
+  review" block (#12).
+- A name that matched the wrong marker (ambiguous synonym, e.g. a bare leukocyte name printed in
+  10^9/L but mapped to the % type) used to take that marker's slot in the panel, so the correct
+  row was rejected as a duplicate. When the unit's dimension can't belong to the matched marker
+  the row is now stored unmapped, with a "likely wrong type" note instead of "no unit conversion".
+
+### Added
+- `map_pending_observation(observation_id, type_code)` — assigns the type, re-normalizes the value,
+  re-runs the critical-value check and saves the printed name as a learned synonym, so the next
+  panel maps it automatically. Migration 0011: `observations.type_id` nullable + `raw_name`;
+  unmapped rows can never be approved (`approve_staged_source` leaves them pending).
+
 ## [0.2.1] — 2026-10-01
 
 ### Fixed

@@ -7,7 +7,7 @@ from mcp_server.tools import medication_safety
 
 def test_server_registers_all_tools():
     names = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert len(names) == 28
+    assert len(names) == 29
     assert {"get_health_summary", "stage_lab_panel", "approve_staged_source", "log_meal",
             "check_medication_safety", "crisis_resources"} <= names
 
@@ -56,7 +56,7 @@ def test_every_tool_is_annotated_for_client_permissions():
     writes = {n for n, a in tools.items() if not a.read_only_hint}
     assert writes == {"set_profile", "record_allergy", "record_diagnosis", "record_medication",
                       "log_meal", "save_meal_template", "log_from_template", "stage_lab_panel",
-                      "approve_staged_source"}
+                      "map_pending_observation", "approve_staged_source"}
     # approving turns unverified values into facts → clients should always confirm
     assert tools["approve_staged_source"].destructive_hint is True
     assert tools["crisis_resources"].read_only_hint and tools["sql_query"].read_only_hint

@@ -50,7 +50,8 @@ def test_stage_review_approve_cycle():
 
         # explicit approval
         appr = json.loads(write_tools.approve_staged_source(sid))
-        assert appr["approved_observations"] == 2  # cholesterol + potassium (gibberish not created)
+        assert appr["approved_observations"] == 2  # cholesterol + potassium; gibberish unmapped
+        assert [u["raw_name"] for u in appr["left_pending_unmapped"]] == ["абракадабра"]
 
         # now cholesterol is in the approved-view
         after = json.loads(tools.sql_query(q))

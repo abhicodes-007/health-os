@@ -38,7 +38,7 @@ Only READ-ONLY views are available (approved + not deleted):
   v_observations(id, user_id, type_code, name_uk, category, specimen, effective_at,
                  value_numeric, comparator, value_text, unit, value_canonical,
                  canonical_unit, ref_min, ref_max, status, result_status, context, panel_id)
-  v_observations_pending(... , review_status, review_note)   -- NOT fact, only for review
+  v_observations_pending(... , review_status, review_note, raw_name, unmapped)  -- NOT fact, review only
   v_medications_current(id, medication_name, dose_amount, dose_unit, times_per_day, ...)
   v_diagnoses(id, diagnosed_at, diagnosis_name, icd10_code, clinical_status, verification_status)
   v_allergies(id, allergen, reaction, severity, verified)     -- verified=false is ALSO an allergy
@@ -148,7 +148,9 @@ def list_pending_reviews() -> str:
     """Lab values that were staged (stage_lab_panel) but NOT yet approved by the user —
     marker, value, unit, date and status, each marked "PENDING — unverified". Never cite these as
     facts or use them in trends; show them so the user can compare with the original report and
-    then approve via approve_staged_source. Approved values are read with query_observations."""
+    then approve via approve_staged_source. Rows with unmapped=true have no marker type yet (only
+    the printed raw_name): ask the user which marker it is, then map_pending_observation.
+    Approved values are read with query_observations."""
     return tools.list_pending_reviews()
 
 
@@ -337,8 +339,21 @@ def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
                     facility: str = "") -> str:
     """Stage an extracted lab panel (PENDING). rows: a list of
     {raw_name, value, unit, ref_min, ref_max}. Critical values are alerted immediately.
+    Names not in the catalog (or whose unit can't belong to the matched marker) are stored
+    UNMAPPED and pending — resolve them with map_pending_observation.
     Afterwards — show the table to the user and wait for an explicit approve_staged_source."""
     return write_tools.stage_lab_panel(panel_date, rows, panel_type, facility)
+
+
+@mcp.tool(annotations=STAGE)
+def map_pending_observation(observation_id: str, type_code: str,
+                            learn_synonym: bool = True) -> str:
+    """Assign a marker type (observation_types.code, e.g. "lymphocytes_abs") to a pending row
+    that is unmapped or matched to the wrong marker — only after the user confirmed which marker
+    it is. Re-normalizes the value into the canonical unit, re-runs the critical-value check and
+    (learn_synonym) remembers the printed name so future panels map it automatically. Refuses a
+    type whose unit dimension doesn't fit. The row stays PENDING; approve separately."""
+    return write_tools.map_pending_observation(observation_id, type_code, learn_synonym)
 
 
 @mcp.tool(annotations=APPROVE)

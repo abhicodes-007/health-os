@@ -64,11 +64,17 @@ def test_ingest_critical_potassium_forces_review(conn, user_id):
     assert rs == "pending"
 
 
-def test_ingest_unknown_name_no_row_but_flagged(conn, user_id):
+def test_ingest_unknown_name_stored_unmapped_and_flagged(conn, user_id):
     res = ingest_observation(conn, user_id, "абракадабра-показник", 1.0, "mmol/L")
-    assert res.observation_id is None
+    assert res.observation_id is not None and res.unmapped
     assert res.needs_review
     assert res.normalized.unknown_type
+    row = conn.execute(
+        text("SELECT type_id, raw_name, review_status FROM observations WHERE id=:i"),
+        {"i": res.observation_id},
+    ).mappings().one()
+    assert row["type_id"] is None and row["raw_name"] == "абракадабра-показник"
+    assert row["review_status"] == "pending"
 
 
 def test_ingest_unit_gate_pending(conn, user_id):

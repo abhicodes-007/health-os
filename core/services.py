@@ -12,7 +12,14 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from core.normalize import compute_status, normalize
+from core.normalize import (
+    canonicalize_unit,
+    compute_status,
+    convert_to_canonical,
+    find_type,
+    normalize,
+    units_incompatible,
+)
 from safety.critical_values import CriticalHit, evaluate, load_thresholds
 
 
@@ -252,6 +259,7 @@ class IngestResult:
     needs_review: bool
     note: str
     critical_unverified: bool = False  # analyte has critical thresholds, but the unit is unknown
+    unmapped: bool = False             # stored pending without a type (map_pending_observation)
 
 
 def ingest_observation(
@@ -265,7 +273,11 @@ def ingest_observation(
     """Normalizes and records one observation; runs the critical-value rule-engine.
 
     Unknown name / failed unit gate → the record stays pending with a note
-    (we don't guess, don't auto-approve). Critical value → forced flag + needs_review.
+    (we don't guess, don't auto-approve). An unknown name, or a unit whose dimension can't belong
+    to the matched type (likely a wrong/ambiguous synonym), is stored UNMAPPED: type_id NULL +
+    the printed name, so it waits in the review queue for map_pending_observation instead of being
+    lost — and doesn't take the matched type's slot in the panel. Critical value → forced flag +
+    needs_review.
     `alerter(title, message)` — optional alert-delivery callback (in production:
     safety.alerts.send_critical_alert; not passed in tests).
     """
@@ -281,16 +293,25 @@ def ingest_observation(
     if nr.type_code and nr.value_canonical is not None and nr.canonical_unit is not None:
         critical = evaluate(nr.type_code, nr.value_canonical, nr.canonical_unit, thresholds)
     # fail-safe: a critical-watch analyte whose unit we can't convert must not pass silently
+    # (unless the unit says it isn't that analyte at all — then it's stored unmapped)
     critical_unverified = (critical is None and value is not None and nr.conversion_missing
+                           and not nr.dimension_mismatch
                            and any(t.type_code == nr.type_code for t in thresholds))
+    unmapped = nr.type_id is None or nr.dimension_mismatch
 
     needs_review = False
     notes = []
     effective_status = review_status
     if nr.unknown_type:
         needs_review, effective_status = True, "pending"
-        notes.append(f"unknown observation “{raw_name}” — user confirmation required")
-    if nr.conversion_missing:
+        notes.append(f"unknown observation “{raw_name}” — stored unmapped; confirm the marker with "
+                     f"the user, then map_pending_observation")
+    if nr.dimension_mismatch:
+        needs_review, effective_status = True, "pending"
+        notes.append(f"unit “{unit}” can't belong to {nr.type_code} ({nr.canonical_unit}) — the name "
+                     f"likely matched the wrong type (ambiguous synonym); stored unmapped, "
+                     f"map_pending_observation to the right type")
+    elif nr.conversion_missing:
         needs_review, effective_status = True, "pending"
         notes.append(f"no unit conversion “{unit}” → {nr.canonical_unit} (unit gate)")
     if critical:
@@ -309,9 +330,8 @@ def ingest_observation(
     if nr.synonym_origin == "learned":
         notes.append("mapped via a learned synonym — highlight for review")
 
-    if nr.type_id is None:
-        # no type — don't create an observation (no FK type_id); leave it as a signal
-        return IngestResult(None, nr, status, critical, True, "; ".join(notes))
+    if unmapped and value is None and value_text is None:
+        return IngestResult(None, nr, status, critical, True, "; ".join(notes), unmapped=True)
 
     # shared panel source (source_id) or a new per-observation one
     sid = source_id or manual_source(conn, user_id, channel=channel,
@@ -319,20 +339,22 @@ def ingest_observation(
     oid = conn.execute(
         text(
             """
-            INSERT INTO observations (user_id, type_id, effective_at, time_precision,
+            INSERT INTO observations (user_id, type_id, raw_name, effective_at, time_precision,
                 value_numeric, value_text, unit, value_canonical, ref_min, ref_max,
                 status, review_status, source_id, panel_id)
-            VALUES (:uid, :tid, :eff, :tp, :vn, :vt, :u, :vc, :rmin, :rmax, :st, :rs, :sid, :pid)
+            VALUES (:uid, :tid, :raw, :eff, :tp, :vn, :vt, :u, :vc, :rmin, :rmax, :st, :rs,
+                    :sid, :pid)
             RETURNING id
             """
         ),
-        dict(uid=user_id, tid=nr.type_id, eff=effective_at, tp=time_precision, vn=value,
-             vt=value_text, u=unit, vc=nr.value_canonical, rmin=ref_min, rmax=ref_max,
+        dict(uid=user_id, tid=None if unmapped else nr.type_id, raw=raw_name, eff=effective_at,
+             tp=time_precision, vn=value, vt=value_text, u=unit,
+             vc=None if unmapped else nr.value_canonical, rmin=ref_min, rmax=ref_max,
              st=status, rs=effective_status, sid=sid, pid=panel_id),
     ).scalar()
 
     return IngestResult(str(oid), nr, status, critical, needs_review,
-                        "; ".join(notes) or "ok", critical_unverified)
+                        "; ".join(notes) or "ok", critical_unverified, unmapped)
 
 
 # --------------------------------------------------------------------------- panel staging
@@ -383,7 +405,7 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
     )
 
     results = []
-    n_critical = n_unknown = n_unit_gate = n_crit_unverified = 0
+    n_critical = n_unknown = n_unit_gate = n_crit_unverified = n_wrong_type = 0
     for r in rows:
         row_eff = r.get("effective_at")
         # an observation from a form is dated with the panel date (historical date, day only)
@@ -411,7 +433,9 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
             n_crit_unverified += 1
         if res.normalized.unknown_type:
             n_unknown += 1
-        if res.normalized.conversion_missing:
+        if res.normalized.dimension_mismatch:
+            n_wrong_type += 1
+        elif res.normalized.conversion_missing:
             n_unit_gate += 1
         conf = _confidence(
             printed_flag=r.get("printed_flag"),
@@ -422,7 +446,11 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
         )
         results.append({
             "raw_name": r["raw_name"],
-            "matched": res.normalized.type_code,
+            "observation_id": res.observation_id,
+            "stored": res.observation_id is not None,
+            "matched": None if res.unmapped else res.normalized.type_code,
+            **({"rejected_match": res.normalized.type_code}
+               if res.normalized.dimension_mismatch else {}),
             "value": r.get("value"),
             "unit": r.get("unit"),
             "canonical": res.normalized.value_canonical,
@@ -434,16 +462,21 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
             "note": res.note,
         })
 
+    hint = ("Review the table. To write to approved — approve_staged(source_id) "
+            "as a separate explicit command.")
+    if n_unknown or n_wrong_type:
+        hint += (f" {n_unknown + n_wrong_type} row(s) are stored UNMAPPED (no marker type): ask the "
+                 "user which marker each is, then map_pending_observation(observation_id, "
+                 "type_code); approval skips unmapped rows.")
     return {
         "source_id": source_id,
         "panel_id": panel_id,
         "rows": results,
         "counts": {"total": len(rows), "critical": n_critical,
-                   "unknown": n_unknown, "unit_gate": n_unit_gate,
-                   "critical_unverified": n_crit_unverified},
+                   "unknown": n_unknown, "likely_wrong_type": n_wrong_type,
+                   "unit_gate": n_unit_gate, "critical_unverified": n_crit_unverified},
         "duplicate_warning": dup_warning,
-        "hint": "Review the table. To write to approved — approve_staged(source_id) "
-                "as a separate explicit command.",
+        "hint": hint,
     }
 
 
@@ -483,7 +516,8 @@ def approve_staged(conn, user_id: str, source_id: str, *,
                    allow_missing_canonical: bool = False) -> dict:
     """Approves a staging (a separate explicit user action, guardrail plan 4.2).
 
-    Moves the source and all its pending observations to 'approved'. Critical values
+    Moves the source and all its pending typed observations to 'approved' (unmapped rows stay
+    pending until map_pending_observation). Critical values
     keep status='critical' but become visible in the approved view after confirmation.
 
     Numeric rows without a canonical value (unit gate failed) would drop out of trends and
@@ -512,10 +546,18 @@ def approve_staged(conn, user_id: str, source_id: str, *,
         text(
             """UPDATE observations SET review_status='approved'
                WHERE source_id=:sid AND user_id=:u AND review_status='pending'
-                 AND deleted_at IS NULL"""
+                 AND deleted_at IS NULL AND type_id IS NOT NULL"""
         ),
         {"sid": source_id, "u": user_id},
     ).rowcount
+    unmapped = conn.execute(
+        text(
+            """SELECT id, raw_name FROM observations
+               WHERE source_id=:sid AND user_id=:u AND review_status='pending'
+                 AND deleted_at IS NULL AND type_id IS NULL"""
+        ),
+        {"sid": source_id, "u": user_id},
+    ).all()
     conn.execute(
         text("UPDATE ingestion_sources SET review_status='approved', reviewed_by='human', "
              "reviewed_at=now() WHERE id=:sid AND user_id=:u"),
@@ -524,4 +566,123 @@ def approve_staged(conn, user_id: str, source_id: str, *,
     out = {"approved_observations": n, "source_id": source_id}
     if missing:
         out["approved_without_canonical"] = len(missing)
+    if unmapped:
+        out["left_pending_unmapped"] = [{"observation_id": str(i), "raw_name": rn}
+                                        for i, rn in unmapped]
+        out["hint"] = ("Unmapped rows stay pending: map_pending_observation each, then approve "
+                       "this source again.")
+    return out
+
+
+# --------------------------------------------------------------------------- mapping unmapped rows
+def map_pending_observation(conn, user_id: str, observation_id: str, type_code: str, *,
+                            learn_synonym: bool = True, alerter=None) -> dict:
+    """Assign a type to a pending row (unmapped, or matched to the wrong type) — #12.
+
+    Re-normalizes the value into the type's canonical unit and re-runs the critical-value check.
+    The row stays pending (approval is still a separate step). With learn_synonym the printed name
+    is saved as a learned synonym, so future panels map it automatically — unless the name
+    already maps to a type (seed/learned): then a second meaning would only add ambiguity.
+    """
+    row = conn.execute(
+        text(
+            """SELECT o.id, o.type_id, o.raw_name, o.value_numeric, o.unit, o.ref_min, o.ref_max,
+                      o.status, o.panel_id, o.source_id
+               FROM observations o
+               WHERE o.id = CAST(:id AS uuid) AND o.user_id = :u
+                 AND o.review_status = 'pending' AND o.deleted_at IS NULL"""
+        ),
+        {"id": observation_id, "u": user_id},
+    ).mappings().first()
+    if row is None:
+        return {"error": "no pending observation with this id (approved rows can't be remapped)"}
+    t = conn.execute(
+        text("SELECT id, code, canonical_unit FROM observation_types WHERE code = :c"),
+        {"c": type_code},
+    ).mappings().first()
+    if t is None:
+        return {"error": f"unknown type_code “{type_code}” — look it up in observation_types"}
+
+    value = float(row["value_numeric"]) if row["value_numeric"] is not None else None
+    unit = canonicalize_unit(row["unit"])
+    if value is not None and units_incompatible(unit, t["canonical_unit"]):
+        return {"error": f"unit “{row['unit']}” can't belong to {type_code} "
+                         f"({t['canonical_unit']}) — pick a type with a matching unit"}
+    value_canonical = None
+    if value is not None:
+        if t["canonical_unit"] is None:
+            value_canonical = value
+        elif unit is not None:
+            value_canonical = convert_to_canonical(t["id"], value, unit, t["canonical_unit"], conn)
+
+    status = compute_status(value, row["ref_min"], row["ref_max"])
+    thresholds = load_thresholds(conn)
+    critical = None
+    if value_canonical is not None and t["canonical_unit"] is not None:
+        critical = evaluate(type_code, value_canonical, t["canonical_unit"], thresholds)
+    if critical:
+        status = "critical"
+    critical_unverified = (value is not None and value_canonical is None
+                           and any(th.type_code == type_code for th in thresholds))
+
+    conn.execute(text("SELECT set_config('app.actor', 'user', true), "
+                      "set_config('app.reason', 'map_pending', true)"))
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                text("""UPDATE observations SET type_id = :tid, value_canonical = :vc, status = :st
+                        WHERE id = :id"""),
+                {"tid": t["id"], "vc": value_canonical, "st": status, "id": row["id"]},
+            )
+    except IntegrityError:
+        return {"error": f"this panel already has a {type_code} value — the row may be a "
+                         f"different marker, or a duplicate (then leave it unapproved)"}
+
+    learned = None
+    if learn_synonym and row["raw_name"]:
+        existing = find_type(row["raw_name"], conn)
+        if existing is None:
+            conn.execute(
+                text("""INSERT INTO observation_synonyms (type_id, synonym, origin, learned_from,
+                                                          user_id)
+                        VALUES (:tid, :syn, 'learned', :oid, :u)
+                        ON CONFLICT DO NOTHING"""),
+                {"tid": t["id"], "syn": row["raw_name"].strip(), "oid": row["id"], "u": user_id},
+            )
+            learned = {"saved": True}
+        else:
+            learned = {"saved": False,
+                       "reason": f"“{row['raw_name']}” already maps to {existing['code']} "
+                                 f"({existing['origin']}); not adding a second meaning"}
+
+    if alerter is not None and critical:
+        alerter("Health OS — critical value",
+                f"{type_code} {critical.value}{critical.unit}: {critical.message_uk}")
+    elif alerter is not None and critical_unverified:
+        alerter("Health OS — verify a value",
+                f"{type_code} {value} {row['unit']}: unit not recognized, critical check impossible")
+
+    out = {
+        "observation_id": str(row["id"]),
+        "type_code": type_code,
+        "value": value,
+        "unit": row["unit"],
+        "value_canonical": value_canonical,
+        "canonical_unit": t["canonical_unit"],
+        "status": status,
+        "critical": bool(critical),
+        "critical_unverified": critical_unverified,
+        "source_id": str(row["source_id"]),
+        "learned_synonym": learned,
+        "hint": "Still PENDING — approve via approve_staged_source(source_id) on an explicit "
+                "user instruction.",
+    }
+    if critical:
+        out["note"] = "CRITICAL value — forced display; " + critical.message_uk
+    if value is not None and value_canonical is None:
+        out["note"] = (f"no unit conversion “{row['unit']}” → {t['canonical_unit']} (unit gate); "
+                       "approval will ask for allow_missing_canonical")
+        if critical_unverified:
+            out["note"] = (f"CRITICAL CHECK IMPOSSIBLE — unit “{row['unit']}” not recognized for "
+                           f"{type_code}; compare the value with the form now; " + out["note"])
     return out

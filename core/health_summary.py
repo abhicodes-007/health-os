@@ -66,17 +66,19 @@ def build(conn, user_id: str) -> SummaryResult:
     # --- pending review: critical values first (never let "no abnormalities" hide them) ---
     pending = conn.execute(
         text(
-            """SELECT ot.code, o.value_numeric, o.unit, o.effective_at, o.status,
+            """SELECT ot.code, o.raw_name, o.value_numeric, o.value_text, o.unit,
+                      o.effective_at, o.status, (o.type_id IS NULL) AS unmapped,
                       (o.value_canonical IS NULL AND o.value_numeric IS NOT NULL
                        AND EXISTS (SELECT 1 FROM critical_thresholds ct
                                    WHERE ct.type_id = o.type_id)) AS unverifiable
-               FROM observations o JOIN observation_types ot ON ot.id = o.type_id
+               FROM observations o LEFT JOIN observation_types ot ON ot.id = o.type_id
                WHERE o.user_id=:u AND o.review_status='pending' AND o.deleted_at IS NULL
                ORDER BY o.effective_at DESC"""
         ),
         {"u": user_id},
     ).mappings().all()
     alarming = [p for p in pending if p["status"] == "critical" or p["unverifiable"]]
+    unmapped = [p for p in pending if p["unmapped"]]
     if pending:
         lines.append(f"## ⚠️ Awaiting review ({len(pending)} values, not yet facts)")
         for p in alarming:
@@ -85,8 +87,19 @@ def build(conn, user_id: str) -> SummaryResult:
                     "**unit not recognized — critical check impossible**, compare with the form now")
             lines.append(f"- {p['code']} {p['value_numeric']:g} {p['unit'] or ''} "
                          f"({p['effective_at']:%Y-%m-%d}): {what}")
-        if len(pending) > len(alarming):
-            lines.append(f"- {len(pending) - len(alarming)} other value(s) — see list_pending_reviews")
+        if unmapped:
+            # an unrecognized marker can't be checked against critical thresholds at all
+            shown = ", ".join(
+                f"“{p['raw_name']}” "
+                + (f"{p['value_numeric']:g} {p['unit'] or ''}".strip()
+                   if p["value_numeric"] is not None else (p["value_text"] or ""))
+                for p in unmapped[:8])
+            more = f" … and {len(unmapped) - 8} more" if len(unmapped) > 8 else ""
+            lines.append(f"- **{len(unmapped)} unrecognized marker(s)** — not checked for critical "
+                         f"values until mapped (map_pending_observation): {shown}{more}")
+        rest = len(pending) - len(alarming) - len(unmapped)
+        if rest > 0:
+            lines.append(f"- {rest} other value(s) — see list_pending_reviews")
         lines.append("")
 
     # --- allergies (including unverified!) ---

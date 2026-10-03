@@ -82,7 +82,8 @@ trend over 2 years", "what is pending review", "what did I eat this week and wha
 | set_profile | date of birth, sex, blood type |
 | record_allergy / record_diagnosis / record_medication | manual entries (with provenance) |
 | log_meal / save_meal_template / log_from_template | food log with a full nutrient profile |
-| stage_lab_panel | stage an extracted lab panel as PENDING (critical values alert immediately) |
+| stage_lab_panel | stage an extracted lab panel as PENDING (critical values alert immediately); unknown names are kept as unmapped pending rows |
+| map_pending_observation | assign a marker type to an unmapped/mis-mapped pending row; learns the printed name as a synonym |
 | approve_staged_source | approve a staged panel — only on the user's explicit instruction |
 
 ## Safety rules for the model
