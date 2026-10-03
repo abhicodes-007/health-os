@@ -97,6 +97,18 @@ MCP client (local or cloud model)
    PostgreSQL 16 + pgvector  ◀── ingestion/ (Apple Health, Garmin, embeddings)
 ```
 
+### A lab result, from report to fact
+
+Every row of a staged panel ends up **pending** — nothing becomes a fact without an explicit
+approve. A row the catalog can't place is kept, not dropped:
+
+<p align="center">
+  <img src="docs/lab-result-flow.drawio.svg" alt="How a lab result row moves from stage_lab_panel through pending states to approved" width="820">
+</p>
+
+Unmapped and pending rows show up in `list_pending_reviews` and in the health summary's
+"awaiting review" block; a learned name maps automatically on the next panel.
+
 | Directory | What's inside |
 |---|---|
 | `core/` | config, DB, normalization, services, dedup, health summary |
