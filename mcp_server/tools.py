@@ -170,6 +170,8 @@ def list_meal_templates() -> str:
 def get_timeline(days: int = 3650) -> str:
     with engine.connect() as conn:
         uid = _user_id(conn)
+        if not uid:
+            return _no_user_error()
         rows = conn.execute(
             text(
                 """SELECT kind, at, title FROM health_timeline
@@ -184,6 +186,8 @@ def get_timeline(days: int = 3650) -> str:
 def _simple_view(view: str) -> str:
     with engine.connect() as conn:
         uid = _user_id(conn)
+        if not uid:
+            return _no_user_error()
         rows = conn.execute(
             text(f"SELECT * FROM {view} WHERE user_id=:u LIMIT :lim"),
             {"u": uid, "lim": MAX_ROWS},
@@ -207,12 +211,18 @@ def list_pending_reviews() -> str:
     return _simple_view("v_observations_pending")
 
 
+
+def _no_user_error() -> str:
+    return json.dumps({"error": "no user", "hint": "call set_profile first"})
+
 def get_trend(type_code: str, days: int = 1825) -> str:
     """Marker trend by Mann-Kendall (direction + significance) over approved values."""
     from analytics.trends import trend as _trend
 
     with engine.connect() as conn:   # via the approved-view (readonly)
         uid = _user_id(conn)
+        if not uid:
+            return _no_user_error()
         rows = conn.execute(
             text(
                 """SELECT value_canonical, effective_at FROM (
