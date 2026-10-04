@@ -72,6 +72,9 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/alembic upgrade head        # schema
 .venv/bin/python -m seed.load         # marker catalog, synonyms, units, nutrients
 .venv/bin/python -m seed.demo         # optional: a fictional demo patient to play with
+
+# or, one command after docker is available:
+make demo                              # db up + migrations + catalog + demo patient
 ```
 
 Then connect an MCP client — config for LM Studio, Open WebUI, Ollama CLI and Claude is in
