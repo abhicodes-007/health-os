@@ -85,17 +85,9 @@ local model can use it. Verified so far: the server itself with the official MCP
 
 ## How it works
 
-```
-MCP client (local or cloud model)
-        │ stdio
-   mcp_server/  ── read tools ──▶ approved views (read-only role, 5s timeout, row limits)
-        │        ── write tools ─▶ core/services: normalize → status → critical rules → pending
-        │
-   safety/    critical values, narrative flags, interactions, crisis, alerts
-   analytics/ trends, baselines, calculators, screening, nutrition, weekly report
-        │
-   PostgreSQL 16 + pgvector  ◀── ingestion/ (Apple Health, Garmin, embeddings)
-```
+<p align="center">
+  <img src="docs/architecture.drawio.svg" alt="Architecture: MCP client over stdio to mcp_server; read tools query approved views, write tools go through core/services into pending; safety, analytics, PostgreSQL with pgvector, ingestion" width="820">
+</p>
 
 ### A lab result, from report to fact
 
