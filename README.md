@@ -29,7 +29,7 @@ schedules are deterministic code, not LLM judgement.
   age-gated risk calculators, a screening calendar, a weekly report, a doctor-visit brief.
 - **Food log** — meals with a 41-nutrient profile, %RDA, deficiency/excess flags, meal templates.
 - **Devices** — Apple Health export and Garmin import.
-- **29 MCP tools + server instructions** — the safety rules are sent to every client on connect;
+- **33 MCP tools + server instructions** — the safety rules are sent to every client on connect;
   see [mcp_server/README.md](mcp_server/README.md).
 
 ## Try it in one command
@@ -51,6 +51,7 @@ Point your MCP client at it:
       "command": "docker",
       "args": ["run", "-i", "--rm", "--network", "health-os-demo",
                "-e", "DATABASE_URL=postgresql+psycopg://health:demo@db:5432/health_os",
+               "-e", "READONLY_DATABASE_URL=postgresql+psycopg://health_readonly:demo_ro@db:5432/health_os",
                "health-os:local"]
     }
   }

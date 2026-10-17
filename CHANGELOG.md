@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-15
+
+### Changed
+- `sql_query` runs only on the restricted read-only login (`READONLY_DATABASE_URL`). On a login
+  that can do more (a superuser or the owner of the tables — the default without
+  `READONLY_DATABASE_URL`) it returns an error explaining the setup; the other read tools are
+  unaffected. The Docker demo now sets up and uses the restricted login.
+
 ### Fixed
 - Lab rows with a name missing from the catalog were dropped by `stage_lab_panel` (only a note
   in the response). They are now stored as pending **unmapped** rows (printed name, value, unit,
@@ -15,12 +23,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follo
   10^9/L but mapped to the % type) used to take that marker's slot in the panel, so the correct
   row was rejected as a duplicate. When the unit's dimension can't belong to the matched marker
   the row is now stored unmapped, with a "likely wrong type" note instead of "no unit conversion".
+- `stage_lab_panel` crashed on a value passed as printed — `"6,4"`, `"negative"`, `"<0.5"` — and
+  lost the whole panel, critical rows included. Numeric strings are now read as numbers, other
+  text is stored as `value_text`, and every row is isolated: a row that still fails is reported
+  and the rest is kept. A row without a value says "no value" (it was reported as a duplicate),
+  and `panel_date` must be a valid date that isn't in the future (#41).
+- `check_medication_safety` counted a paracetamol product with no known dose as 0 mg and answered
+  "within limits"; a current paracetamol entry without a dose in mg was skipped. An unknown dose
+  is now reported as `incomplete`, asking for mg per dose and doses per day (#43).
+- `get_trend` / `query_observations`: a code with no values at all (`"LDL"`, a typo) looked like
+  "no data for this marker". Codes are lower-cased, and an empty result says which case it is,
+  with `did_you_mean` codes. Very large `days` windows no longer crash six read tools, and
+  panels without a type are titled "lab panel" in the timeline (#44).
+- `get_trend` used the oldest 500 values instead of the most recent (#24); `search` failed on
+  tokens with leading/trailing apostrophes (#23); read tools returned empty lists instead of a
+  "no user" error before a profile exists (#25); `approve_staged_source` reported success for an
+  unknown `source_id` (#26).
+- The test suite fired real critical alerts (alerts log, macOS notification, Telegram) on the
+  maintainer's machine; tests now never reach the real channels (#40).
 
 ### Added
 - `map_pending_observation(observation_id, type_code)` — assigns the type, re-normalizes the value,
   re-runs the critical-value check and saves the printed name as a learned synonym, so the next
   panel maps it automatically. Migration 0011: `observations.type_id` nullable + `raw_name`;
   unmapped rows can never be approved (`approve_staged_source` leaves them pending).
+- `update_medication` and `stop_medication` — medications could only be added, so a wrong dose
+  or a drug the user no longer takes could be fixed only with raw SQL, and `get_medications`
+  kept listing it. Corrections change only the given fields; a stop sets status `stopped` +
+  `end_date` (not in the future), drops the drug from `get_medications` and the safety checks
+  and adds a `medication_stop` event to the timeline. A dose the doctor changed is recorded as
+  stop + new entry, so the timeline shows when. Migration 0012: `medication_history` (trigger
+  keeps every previous version of the row, like `observation_history`).
+- `record_medication` takes `route` (oral / topical / …).
+- `update_meal` and `delete_meal` — a logged meal couldn't be corrected: a wrong time, portion or
+  nutrient estimate, or a meal logged twice, needed raw SQL. `update_meal` overwrites only the
+  given fields and nutrient codes; `delete_meal` is a soft delete. `query_food` now returns each
+  meal's `id` for them.
+- `log_meal` / `log_from_template` return the `eaten_at` they stored and a `time_check` note when
+  a main meal's time looks wrong: a lunch at 23:30, or a meal after midnight that may belong to
+  the day before. Daily nutrient totals go by the date, and meals logged late at night with
+  "now" as the time were landing on the wrong day (5 of 45 main meals in real use).
 
 ## [0.2.1] — 2026-10-01
 
@@ -131,7 +173,8 @@ First public release.
 - Postgres and Open WebUI ports bound to `127.0.0.1` by default.
 - Private vulnerability reporting — see [SECURITY.md](SECURITY.md).
 
-[Unreleased]: https://github.com/andronaft/health-os/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/andronaft/health-os/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/andronaft/health-os/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/andronaft/health-os/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/andronaft/health-os/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andronaft/health-os/releases/tag/v0.1.0

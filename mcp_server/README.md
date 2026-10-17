@@ -81,7 +81,9 @@ trend over 2 years", "what is pending review", "what did I eat this week and wha
 |---|---|
 | set_profile | date of birth, sex, blood type |
 | record_allergy / record_diagnosis / record_medication | manual entries (with provenance) |
+| update_medication / stop_medication | correct a medication entry or record that it was stopped; previous versions kept in `medication_history`, stops shown on the timeline |
 | log_meal / save_meal_template / log_from_template | food log with a full nutrient profile |
+| update_meal / delete_meal | fix a logged meal's time, portion or nutrients, or remove one logged by mistake (`delete_meal` is `destructiveHint`) |
 | stage_lab_panel | stage an extracted lab panel as PENDING (critical values alert immediately); unknown names are kept as unmapped pending rows |
 | map_pending_observation | assign a marker type to an unmapped/mis-mapped pending row; learns the printed name as a synonym |
 | approve_staged_source | approve a staged panel — only on the user's explicit instruction |
@@ -97,7 +99,8 @@ available as the `health_assistant` prompt for clients that only support prompts
 ## Permissions
 
 Every tool carries MCP annotations: reads are `readOnlyHint`, writes are not, and
-`approve_staged_source` is `destructiveHint` — it turns unverified values into facts.
+`approve_staged_source` (turns unverified values into facts) and `delete_meal` are
+`destructiveHint`.
 Recommended client setup: allow read tools automatically, **always ask** before
 `approve_staged_source` (and ideally before other writes). In Claude Code, for example:
 `"permissions": {"ask": ["mcp__health-os__approve_staged_source"]}`.
@@ -120,5 +123,6 @@ Recommended client setup: allow read tools automatically, **always ask** before
 .venv/bin/alembic upgrade head
 .venv/bin/python -m scripts.setup_readonly   # enables LOGIN + password
 ```
-If it is not configured, reads go through the main connection (protection stays at the code
-level: read-only tx in sql_query), but without DB-level isolation.
+Without it the read tools go through the main connection (the approved views still filter what
+they return), and `sql_query`, which runs SQL written by the model, refuses to run: it needs a
+login that can't act as more than `health_readonly`.

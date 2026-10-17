@@ -28,6 +28,8 @@ WRITE_IDEMPOTENT = ToolAnnotations(read_only_hint=False, destructive_hint=False,
                                    open_world_hint=False)
 STAGE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False,
                         open_world_hint=True)  # may send a critical-value alert (Telegram)
+DELETE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True,
+                        open_world_hint=False)
 APPROVE = ToolAnnotations(title="Approve a staged lab panel (confirm with the user)",
                           read_only_hint=False, destructive_hint=True, idempotent_hint=True,
                           open_world_hint=False)
@@ -81,8 +83,8 @@ def get_timeline(days: int = 3650) -> str:
 
 @mcp.tool(annotations=READ)
 def query_food(days: int = 7, meal_type: str = "") -> str:
-    """Food diary entries for the last N days, newest first (max 200 meals): time, meal type,
-    description, portion, glycemic index/load, symptoms and wellbeing after eating, plus the
+    """Food diary entries for the last N days, newest first (max 200 meals): id (for
+    update_meal / delete_meal), time, meal type, description, portion, glycemic index/load, symptoms and wellbeing after eating, plus the
     nutrients stored for each meal. Use it to see WHAT was eaten. For daily totals vs norms use
     query_nutrition; for deficiencies and food↔wellbeing patterns use nutrition_report.
     days: look-back window (default 7). meal_type: optional filter —
@@ -120,7 +122,8 @@ def get_medications() -> str:
     """Medications and supplements the user is currently taking (status "taking"): name, dose,
     unit, times per day, route, product type (prescription / otc / supplement / herbal).
     Use it before any medication question — then call check_medication_safety; never suggest
-    dose changes. To add one use record_medication."""
+    dose changes. To add one use record_medication, to fix an entry update_medication, when
+    the user stopped taking one stop_medication."""
     return tools.get_medications()
 
 
@@ -284,15 +287,47 @@ def record_diagnosis(diagnosis_name: str, diagnosed_at: str, icd10_code: str = "
 def record_medication(medication_name: str, start_date: str, dose_amount: float | None = None,
                       dose_unit: str = "", times_per_day: float | None = None,
                       product_type: str = "prescription", prescribed_for: str = "",
-                      atc_code: str = "") -> str:
+                      atc_code: str = "", route: str = "") -> str:
     """Add a medication or supplement the user currently takes (stored immediately as
-    approved). medication_name: brand or generic; start_date: YYYY-MM-DD; dose_amount + dose_unit
-    (e.g. 1000 + mg) and times_per_day — record these whenever known, check_medication_safety
-    uses them (e.g. total daily paracetamol); product_type: prescription (default) / otc /
-    supplement / herbal; prescribed_for: optional reason; atc_code: optional. Never use this to
-    change a prescribed dose — that is for the doctor."""
+    approved). medication_name: brand or generic, with the strength if it has one (e.g.
+    "Minoxidil 5%"); start_date: YYYY-MM-DD; dose_amount + dose_unit (e.g. 1000 + mg, 1 + ml) and
+    times_per_day — record these whenever known, check_medication_safety uses them (e.g. total
+    daily paracetamol); product_type: prescription (default) / otc / supplement / herbal;
+    prescribed_for: optional reason; atc_code: optional; route: oral / topical / inhaled /
+    injection / … Check get_medications first to avoid duplicates. Never use this to change a
+    prescribed dose — that is for the doctor."""
     return write_tools.record_medication(medication_name, start_date, dose_amount, dose_unit,
-                                         times_per_day, product_type, prescribed_for, atc_code)
+                                         times_per_day, product_type, prescribed_for, atc_code,
+                                         route)
+
+
+@mcp.tool(annotations=WRITE_IDEMPOTENT)
+def update_medication(medication_id: str, medication_name: str = "",
+                      dose_amount: float | None = None, dose_unit: str = "",
+                      times_per_day: float | None = None, route: str = "",
+                      product_type: str = "", prescribed_for: str = "", atc_code: str = "",
+                      start_date: str = "") -> str:
+    """Correct a recorded medication the user says is wrong or incomplete: a typo in the name,
+    a missing or mistyped dose, unit, times_per_day or route, the wrong start date.
+    medication_id comes from get_medications; pass only the fields to change (empty = keep).
+    The previous version is kept in the change history. Not for a dose the doctor changed —
+    then call stop_medication (stop_reason "dose changed") and record_medication with the new
+    dose from that date, so the timeline shows the change. Never suggest dose changes yourself."""
+    return write_tools.update_medication(medication_id, medication_name, dose_amount, dose_unit,
+                                         times_per_day, route, product_type, prescribed_for,
+                                         atc_code, start_date)
+
+
+@mcp.tool(annotations=WRITE_IDEMPOTENT)
+def stop_medication(medication_id: str, end_date: str = "", stop_reason: str = "",
+                    side_effects: str = "") -> str:
+    """Record that the user no longer takes a medication: medication_id from get_medications,
+    end_date YYYY-MM-DD (default today; not in the future), stop_reason and side_effects
+    optional (e.g. "course finished", "doctor stopped it", "dose changed"; "rash"). It drops
+    out of get_medications and the safety checks but stays on the timeline as medication_stop.
+    Only when the user says it was stopped — never suggest stopping a medication. If the side
+    effect sounds like an allergic reaction, offer record_allergy too."""
+    return write_tools.stop_medication(medication_id, end_date, stop_reason, side_effects)
 
 
 @mcp.tool(annotations=WRITE)
@@ -307,7 +342,10 @@ def log_meal(description: str, meal_type: str = "", eaten_at: str = "", portion:
     vitamin_c/vitamin_d/vitamin_b12/folate_b9/water/caffeine/alcohol/...). added_sugar —
     sugar ADDED to the dish (not natural from fruit/milk). The full-profile estimate is made by
     the model (including from a photo). glycemic_index/glycemic_load — per meal; symptoms/wellbeing —
-    reaction after eating. Review — query_food; daily norms — query_nutrition."""
+    reaction after eating. Daily totals go by the date of eaten_at: when the user logs a meal
+    later (e.g. lunch in the evening, yesterday's dinner after midnight), pass when it was
+    eaten, not now; a time_check in the response means the time looks wrong — confirm it with
+    the user. Review — query_food; daily norms — query_nutrition."""
     return write_tools.log_meal(description, meal_type, eaten_at, portion, nutrients,
                                 glycemic_index, glycemic_load, symptoms, wellbeing,
                                 nutrient_source, notes)
@@ -324,6 +362,29 @@ def save_meal_template(name: str, meal_type: str = "", description: str = "",
     return write_tools.save_meal_template(name, meal_type, description, nutrients, glycemic_index)
 
 
+@mcp.tool(annotations=WRITE_IDEMPOTENT)
+def update_meal(food_log_id: str, eaten_at: str = "", meal_type: str = "",
+                description: str = "", portion: str = "", nutrients: dict | None = None,
+                glycemic_index: int | None = None, glycemic_load: float | None = None,
+                symptoms: str = "", wellbeing: str = "", notes: str = "") -> str:
+    """Correct a logged meal: food_log_id from query_food; pass only what to change (empty =
+    keep). eaten_at 'YYYY-MM-DD HH:MM' moves it to the right day (daily totals go by its date);
+    nutrients {code: amount} overwrites just those codes, the rest of the profile stays — e.g.
+    the user ate half: pass the halved amounts. To remove a meal logged by mistake or twice
+    use delete_meal."""
+    return write_tools.update_meal(food_log_id, eaten_at, meal_type, description, portion,
+                                   nutrients, glycemic_index, glycemic_load, symptoms,
+                                   wellbeing, notes)
+
+
+@mcp.tool(annotations=DELETE)
+def delete_meal(food_log_id: str) -> str:
+    """Remove a meal from the food diary and the nutrient totals — only when the user says it
+    was logged by mistake or twice (food_log_id from query_food). To fix a time, portion or
+    nutrients use update_meal instead."""
+    return write_tools.delete_meal(food_log_id)
+
+
 @mcp.tool(annotations=WRITE)
 def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = "",
                       wellbeing: str = "", symptoms: str = "") -> str:
@@ -337,8 +398,10 @@ def log_from_template(name: str, portion_factor: float = 1.0, eaten_at: str = ""
 @mcp.tool(annotations=STAGE)
 def stage_lab_panel(panel_date: str, rows: list[dict], panel_type: str = "",
                     facility: str = "") -> str:
-    """Stage an extracted lab panel (PENDING). rows: a list of
-    {raw_name, value, unit, ref_min, ref_max}. Critical values are alerted immediately.
+    """Stage an extracted lab panel (PENDING). panel_date: YYYY-MM-DD from the report. rows: a
+    list of {raw_name, value, unit, ref_min, ref_max}; value is a number — a printed "6,4" is
+    read as 6.4, and a qualitative result ("negative", "not detected") or a limit ("<0.5") goes
+    in as text (or pass it as value_text). Critical values are alerted immediately.
     Names not in the catalog (or whose unit can't belong to the matched marker) are stored
     UNMAPPED and pending — resolve them with map_pending_observation.
     Afterwards — show the table to the user and wait for an explicit approve_staged_source."""

@@ -7,7 +7,7 @@ from mcp_server.tools import medication_safety
 
 def test_server_registers_all_tools():
     names = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert len(names) == 29
+    assert len(names) == 33
     assert {"get_health_summary", "stage_lab_panel", "approve_staged_source", "log_meal",
             "check_medication_safety", "crisis_resources"} <= names
 
@@ -36,6 +36,17 @@ def test_medication_safety_sums_paracetamol_from_current_meds():
     assert p["source"] == "current_medications" and "Combination products" in p["note"]
 
 
+def test_medication_safety_flags_current_paracetamol_without_a_dose():
+    # used to be skipped silently (only dose_unit == "mg" was looked at)
+    meds = [{"medication_name": "Paracetamol", "dose_amount": None, "dose_unit": None,
+             "times_per_day": None},
+            {"medication_name": "Парацетамол 1 г", "dose_amount": 1, "dose_unit": "g",
+             "times_per_day": 2}]
+    p = medication_safety(meds)["paracetamol"]
+    assert p["level"] == "incomplete" and p["missing_dose"] == ["Paracetamol"]
+    assert p["total_mg_per_day"] == 2000  # 1 g × 2 counted in mg
+
+
 def test_medication_safety_explicit_products_across_otc():
     products = [{"name": "Paracetamol", "mg_per_dose": 1000, "doses_per_day": 3},
                 {"name": "Cold & flu powder", "mg_per_dose": 500, "doses_per_day": 3}]
@@ -55,10 +66,12 @@ def test_every_tool_is_annotated_for_client_permissions():
     assert all(a is not None for a in tools.values())
     writes = {n for n, a in tools.items() if not a.read_only_hint}
     assert writes == {"set_profile", "record_allergy", "record_diagnosis", "record_medication",
-                      "log_meal", "save_meal_template", "log_from_template", "stage_lab_panel",
+                      "update_medication", "stop_medication", "log_meal", "update_meal",
+                      "delete_meal", "save_meal_template", "log_from_template", "stage_lab_panel",
                       "map_pending_observation", "approve_staged_source"}
     # approving turns unverified values into facts → clients should always confirm
     assert tools["approve_staged_source"].destructive_hint is True
+    assert tools["delete_meal"].destructive_hint is True
     assert tools["crisis_resources"].read_only_hint and tools["sql_query"].read_only_hint
 
 

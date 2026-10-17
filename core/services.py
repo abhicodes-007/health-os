@@ -6,8 +6,9 @@ status computation from the form, and the deterministic critical-value rule-engi
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -141,6 +142,101 @@ def add_medication(conn, user_id: str, medication_name: str, *, start_date,
     )
 
 
+# fields a correction may touch; status/end_date change only through stop_medication
+MEDICATION_EDITABLE = ("medication_name", "dose_amount", "dose_unit", "route", "times_per_day",
+                       "product_type", "prescribed_for", "atc_code", "start_date")
+
+
+def _as_date(v) -> date:
+    return v if isinstance(v, date) else date.fromisoformat(str(v))
+
+
+def _find_medication(conn, user_id: str, medication_id: str):
+    try:
+        uuid.UUID(str(medication_id))
+    except ValueError:
+        return None
+    return conn.execute(
+        text("""SELECT * FROM medications
+                WHERE id = CAST(:id AS uuid) AND user_id = :u AND deleted_at IS NULL"""),
+        {"id": medication_id, "u": user_id},
+    ).mappings().first()
+
+
+def _set_actor(conn, reason: str) -> None:
+    # read by the medication_history trigger (migration 0012)
+    conn.execute(text("SELECT set_config('app.actor', 'user', true), "
+                      "set_config('app.reason', :r, true)"), {"r": reason})
+
+
+def update_medication(conn, user_id: str, medication_id: str, changes: dict) -> dict:
+    """Correct a recorded medication in place: a typo, a missing dose, unit, frequency or route.
+
+    Only the given fields change (None = keep); the previous row is kept in medication_history.
+    A dose the doctor changed is not a correction — stop the old entry and record a new one,
+    so the timeline shows when the change happened.
+    """
+    unknown = sorted(set(changes) - set(MEDICATION_EDITABLE))
+    if unknown:
+        return {"error": f"can't change {', '.join(unknown)} — editable: "
+                         f"{', '.join(MEDICATION_EDITABLE)}"}
+    changes = {k: v for k, v in changes.items() if v is not None}
+    if not changes:
+        return {"error": "nothing to change — pass at least one field"}
+    row = _find_medication(conn, user_id, medication_id)
+    if row is None:
+        return {"error": "no medication with this id — take it from get_medications"}
+    if "start_date" in changes:
+        try:
+            changes["start_date"] = _as_date(changes["start_date"])
+        except ValueError:
+            return {"error": "start_date must be YYYY-MM-DD"}
+        if row["end_date"] and changes["start_date"] > row["end_date"]:
+            return {"error": f"start_date is after the end_date {row['end_date']}"}
+
+    _set_actor(conn, "update_medication")
+    sets = ", ".join(f"{k} = :{k}" for k in changes)  # keys are whitelisted above
+    conn.execute(text(f"UPDATE medications SET {sets} WHERE id = :id"),
+                 {**changes, "id": row["id"]})
+    return {"id": str(row["id"]),
+            "changed": {k: {"from": row[k], "to": v} for k, v in changes.items()
+                        if row[k] != v}}
+
+
+def stop_medication(conn, user_id: str, medication_id: str, *, end_date,
+                    stop_reason=None, side_effects=None) -> dict:
+    """Mark a medication as no longer taken (status 'stopped' + end_date).
+
+    It leaves v_medications_current (get_medications, the health summary, safety checks) and
+    stays on the timeline as a medication_stop event. The previous row goes to medication_history.
+    """
+    row = _find_medication(conn, user_id, medication_id)
+    if row is None:
+        return {"error": "no medication with this id — take it from get_medications"}
+    if row["status"] != "taking":
+        return {"error": f"already {row['status']}"
+                         + (f" since {row['end_date']}" if row["end_date"] else "")}
+    try:
+        end = _as_date(end_date)
+    except ValueError:
+        return {"error": "end_date must be YYYY-MM-DD"}
+    if end > date.today():
+        return {"error": "end_date is in the future — record the stop when it happens"}
+    if end < row["start_date"]:
+        return {"error": f"end_date is before the start_date {row['start_date']}"}
+
+    _set_actor(conn, "stop_medication")
+    conn.execute(
+        text("""UPDATE medications SET status = 'stopped', end_date = :e,
+                    stop_reason = COALESCE(:r, stop_reason),
+                    side_effects = COALESCE(:se, side_effects)
+                WHERE id = :id"""),
+        {"e": end, "r": stop_reason, "se": side_effects, "id": row["id"]},
+    )
+    return {"id": str(row["id"]), "medication_name": row["medication_name"],
+            "status": "stopped", "start_date": row["start_date"], "end_date": end}
+
+
 # --------------------------------------------------------------------------- food diary
 def add_food_log(conn, user_id: str, description: str, *, eaten_at, meal_type=None,
                  portion=None, nutrients: dict | None = None, glycemic_index=None,
@@ -171,6 +267,17 @@ def add_food_log(conn, user_id: str, description: str, *, eaten_at, meal_type=No
         ).scalar()
     )
 
+    saved, unknown = _save_nutrients(conn, food_id, nutrients)
+    out = {"id": food_id, "nutrients_saved": saved, "unknown_codes": unknown,
+           "eaten_at": eaten_at}
+    note = meal_time_note(eaten_at, meal_type)
+    if note:
+        out["time_check"] = note
+    return out
+
+
+def _save_nutrients(conn, food_id, nutrients: dict | None) -> tuple[int, list[str]]:
+    """Upsert {code: amount} for one meal; unknown codes are returned, never invented."""
     saved, unknown = 0, []
     if nutrients:
         id_map = {c: nid for nid, c in
@@ -191,8 +298,92 @@ def add_food_log(conn, user_id: str, description: str, *, eaten_at, meal_type=No
                 {"f": food_id, "nid": nid, "a": amount},
             )
             saved += 1
+    return saved, unknown
 
-    return {"id": food_id, "nutrients_saved": saved, "unknown_codes": unknown}
+
+# hours a main meal usually falls in; end is exclusive, dinner runs past midnight
+_MEAL_HOURS = {"breakfast": (4, 13), "lunch": (10, 19), "dinner": (16, 28)}
+
+
+def meal_time_note(eaten_at, meal_type) -> str | None:
+    """A deterministic check of a main meal's time — daily nutrient totals go by its date.
+
+    Meals logged late at night with "now" as the time land on the wrong day (a lunch at 23:30,
+    yesterday's dinner at 00:16). The meal is stored as given; the note asks the model to
+    confirm the time with the user and fix it with update_meal if it's wrong.
+    """
+    if meal_type not in _MEAL_HOURS or not isinstance(eaten_at, datetime):
+        return None
+    day, hm = eaten_at.date(), eaten_at.strftime("%H:%M")
+    if eaten_at.hour < 4:
+        return (f"{meal_type} at {hm} counts toward {day} in the daily totals — if it was "
+                f"eaten on {day - timedelta(days=1)}, fix eaten_at with update_meal")
+    start, end = _MEAL_HOURS[meal_type]
+    if not start <= eaten_at.hour < end:
+        return (f"{meal_type} at {hm} on {day} is unusual — if the time was just when it was "
+                f"logged, ask when it was eaten and fix eaten_at with update_meal")
+    return None
+
+
+MEAL_EDITABLE = ("eaten_at", "meal_type", "description", "portion", "glycemic_index",
+                 "glycemic_load", "symptoms", "wellbeing", "notes")
+
+
+def _find_meal(conn, user_id: str, food_log_id: str):
+    try:
+        uuid.UUID(str(food_log_id))
+    except ValueError:
+        return None
+    return conn.execute(
+        text("""SELECT * FROM food_log
+                WHERE id = CAST(:id AS uuid) AND user_id = :u AND deleted_at IS NULL"""),
+        {"id": food_log_id, "u": user_id},
+    ).mappings().first()
+
+
+def update_meal(conn, user_id: str, food_log_id: str, changes: dict,
+                nutrients: dict | None = None) -> dict:
+    """Correct a logged meal: its time/date, type, description, portion, reaction, or the
+    amounts of the given nutrients (other nutrients are kept). None = keep the field."""
+    unknown = sorted(set(changes) - set(MEAL_EDITABLE))
+    if unknown:
+        return {"error": f"can't change {', '.join(unknown)} — editable: "
+                         f"{', '.join(MEAL_EDITABLE)} and nutrients"}
+    changes = {k: v for k, v in changes.items() if v is not None}
+    if not changes and not nutrients:
+        return {"error": "nothing to change — pass at least one field or nutrients"}
+    row = _find_meal(conn, user_id, food_log_id)
+    if row is None:
+        return {"error": "no meal with this id — take it from query_food"}
+    if "eaten_at" in changes and not isinstance(changes["eaten_at"], datetime):
+        try:
+            changes["eaten_at"] = datetime.fromisoformat(str(changes["eaten_at"]))
+        except ValueError:
+            return {"error": "eaten_at must be ISO 'YYYY-MM-DD HH:MM'"}
+
+    if changes:
+        sets = ", ".join(f"{k} = :{k}" for k in changes)  # keys are whitelisted above
+        conn.execute(text(f"UPDATE food_log SET {sets} WHERE id = :id"),
+                     {**changes, "id": row["id"]})
+    saved, unknown_codes = _save_nutrients(conn, row["id"], nutrients)
+    out = {"id": str(row["id"]),
+           "changed": {k: {"from": row[k], "to": v} for k, v in changes.items() if row[k] != v},
+           "nutrients_saved": saved, "unknown_codes": unknown_codes}
+    note = meal_time_note(changes.get("eaten_at", row["eaten_at"]),
+                          changes.get("meal_type", row["meal_type"]))
+    if note:
+        out["time_check"] = note
+    return out
+
+
+def delete_meal(conn, user_id: str, food_log_id: str) -> dict:
+    """Remove a logged meal from the diary and the nutrient totals (soft delete)."""
+    row = _find_meal(conn, user_id, food_log_id)
+    if row is None:
+        return {"error": "no meal with this id — take it from query_food"}
+    conn.execute(text("UPDATE food_log SET deleted_at = now() WHERE id = :id"), {"id": row["id"]})
+    return {"id": str(row["id"]), "deleted": True, "eaten_at": row["eaten_at"],
+            "meal_type": row["meal_type"], "description": row["description"]}
 
 
 def save_meal_template(conn, user_id: str, name: str, *, meal_type=None, description=None,
@@ -375,6 +566,52 @@ def _get_or_create_facility(conn, user_id: str, name: str | None) -> str | None:
     )
 
 
+def _lab_number(v) -> float | None:
+    """A number from a value or a printed string ("6,4", " 5.4", "−3"); None if it isn't one."""
+    import re
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, int | float):
+        return float(v)
+    s = str(v).strip().replace("\u2212", "-").replace(" ", "")
+    if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)?", s):
+        return float(s.replace(",", "."))
+    return None
+
+
+def _coerce_lab_row(r: dict) -> tuple[dict, str | None]:
+    """Models pass values as printed: "6,4", "negative", "<0.5". A numeric string becomes a
+    number; any other text goes to value_text (a qualitative result or a detection limit) —
+    a string compared with a float used to crash the whole panel, critical rows included."""
+    r = dict(r)
+    note = None
+    v = r.get("value")
+    if isinstance(v, str):
+        num = _lab_number(v)
+        if num is not None:
+            r["value"] = num
+        else:
+            r["value"] = None
+            if v.strip() and not r.get("value_text"):
+                r["value_text"] = v.strip()
+                note = "stored as text, not a number"
+    for k in ("ref_min", "ref_max"):
+        if r.get(k) is not None and not isinstance(r[k], int | float):
+            r[k] = _lab_number(r[k])
+    return r, note
+
+
+def _check_panel_date(panel_date) -> str | None:
+    from datetime import date, timedelta
+    try:
+        d = panel_date if isinstance(panel_date, date) else date.fromisoformat(str(panel_date)[:10])
+    except ValueError:
+        return "panel_date must be YYYY-MM-DD"
+    if d > date.today() + timedelta(days=1):
+        return f"panel_date {d} is in the future — check the year on the report"
+    return None
+
+
 def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
                 panel_type: str | None = None, facility: str | None = None,
                 alerter=None) -> dict:
@@ -385,8 +622,13 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
     Returns a staging summary: source_id, panel_id, per-row results, counters,
     a warning about a possible duplicate panel (logical dedup).
     """
+    from sqlalchemy.exc import DBAPIError
+
     from ingestion.confidence import score as _confidence
 
+    date_error = _check_panel_date(panel_date)
+    if date_error:
+        return {"error": date_error}
     facility_id = _get_or_create_facility(conn, user_id, facility)
 
     # logical dedup: same date+facility+≥70% codes → warning (not a block)
@@ -407,6 +649,16 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
     results = []
     n_critical = n_unknown = n_unit_gate = n_crit_unverified = n_wrong_type = 0
     for r in rows:
+        name = str(r.get("raw_name") or "").strip() if isinstance(r, dict) else ""
+        if not name:
+            results.append({"raw_name": None, "stored": False,
+                            "note": "no marker name — not stored"})
+            continue
+        r, coerce_note = _coerce_lab_row({**r, "raw_name": name})
+        if r.get("value") is None and not r.get("value_text"):
+            results.append({"raw_name": name, "value": None, "unit": r.get("unit"),
+                            "stored": False, "note": "no value — not stored"})
+            continue
         row_eff = r.get("effective_at")
         # an observation from a form is dated with the panel date (historical date, day only)
         eff = row_eff or panel_date
@@ -420,12 +672,20 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
                     channel="mcp", review_status="pending", panel_id=panel_id,
                     source_id=source_id, alerter=alerter,
                 )
-        except IntegrityError:
+        except IntegrityError as e:
+            constraint = getattr(getattr(e.orig, "diag", None), "constraint_name", None)
             # the same marker twice in one panel (e.g. fasting + 2 h glucose) — uq_obs_in_panel
-            results.append({"raw_name": r["raw_name"], "value": r.get("value"),
+            note = ("same marker already in this panel — not stored; stage it as a separate "
+                    "panel (e.g. with its own time)" if constraint == "uq_obs_in_panel"
+                    else f"not stored: {constraint or 'integrity error'}")
+            results.append({"raw_name": name, "value": r.get("value"),
+                            "unit": r.get("unit"), "stored": False, "note": note})
+            continue
+        except (TypeError, ValueError, ArithmeticError, DBAPIError) as e:
+            # one malformed row must not lose the panel (and the alerts already sent for it)
+            results.append({"raw_name": name, "value": r.get("value"),
                             "unit": r.get("unit"), "stored": False,
-                            "note": "same marker already in this panel — not stored; stage it as "
-                                    "a separate panel (e.g. with its own time)"})
+                            "note": f"not stored: {type(e).__name__}"})
             continue
         if res.critical:
             n_critical += 1
@@ -452,6 +712,7 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
             **({"rejected_match": res.normalized.type_code}
                if res.normalized.dimension_mismatch else {}),
             "value": r.get("value"),
+            **({"value_text": r["value_text"]} if r.get("value_text") else {}),
             "unit": r.get("unit"),
             "canonical": res.normalized.value_canonical,
             "status": res.status,
@@ -459,7 +720,7 @@ def stage_panel(conn, user_id: str, panel_date, rows: list[dict], *,
             "critical_unverified": res.critical_unverified,
             "confidence": conf.score,
             "confidence_flags": conf.flags,
-            "note": res.note,
+            "note": f"{res.note}; {coerce_note}" if coerce_note else res.note,
         })
 
     hint = ("Review the table. To write to approved — approve_staged(source_id) "
