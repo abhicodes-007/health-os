@@ -55,7 +55,7 @@ def test_identity_when_already_canonical(conn):
     ("Harnstoff", "urea"), ("Ferrytyna", "ferritin"), ("Gesamtcholesterin", "cholesterol_total"),
     ("Cholesterol całkowity", "cholesterol_total"), ("LDL-Cholesterin", "ldl"),
     ("HDL-Cholesterol", "hdl"), ("Triglicéridos", "triglycerides"), ("Witamina D", "vitamin_d"),
-    ("Haemoglobin", "hemoglobin"),
+    ("Haemoglobin", "hemoglobin"), ("Hämoglobin", "hemoglobin"),
     # GOT = AST, GPT = ALT (the first version of this list had them swapped)
     ("GOT", "ast"), ("GPT", "alt"),
 ])

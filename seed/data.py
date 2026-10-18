@@ -156,7 +156,7 @@ OBSERVATION_TYPES = [
 # ---- synonyms: code -> [(synonym, lang)] --------------------------------------------
 # Half of Ukrainian forms before ~2022 were in Russian; so ru is mandatory.
 SYNONYMS = {
-    "hemoglobin": [("гемоглобін", "uk"), ("гемоглобин", "ru"), ("hemoglobin", "en"), ("hb", "en"), ("hgb", "en"), ("hgb", "la"), ("hemoglobina", "es"), ("haemoglobin", "de")],
+    "hemoglobin": [("гемоглобін", "uk"), ("гемоглобин", "ru"), ("hemoglobin", "en"), ("hb", "en"), ("hgb", "en"), ("hgb", "la"), ("hemoglobina", "es"), ("haemoglobin", "de"), ("hamoglobin", "de")],
     "erythrocytes": [("еритроцити", "uk"), ("эритроциты", "ru"), ("rbc", "en"), ("erythrocytes", "en")],
     "leukocytes": [("лейкоцити", "uk"), ("лейкоциты", "ru"), ("wbc", "en"), ("leukocytes", "en"), ("leucocitos", "es"), ("leukozyten", "de"), ("leukocyty", "pl")],
     "platelets": [("тромбоцити", "uk"), ("тромбоциты", "ru"), ("plt", "en"), ("platelets", "en"), ("plaquetas", "es"), ("thrombozyten", "de"), ("płytki krwi", "pl")],
