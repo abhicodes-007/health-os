@@ -8,7 +8,7 @@ start:
 # db healthcheck before migrating; re-running keeps the existing demo data.
 demo:
 	@cd demo && docker compose build init && docker compose run --rm init
-	@echo "Demo ready. MCP client config: README.md → "Try it in one command". Remove: make demo-down"
+	@echo 'Demo ready. MCP client config: README.md → "Try it in one command". Remove: make demo-down'
 
 # Deletes the demo database only (its own volume); your own data is not touched.
 demo-down:
