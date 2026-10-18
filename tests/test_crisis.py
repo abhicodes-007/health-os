@@ -38,8 +38,9 @@ def test_response_hotlines_by_country():
     pl = crisis_response(country="pl")
     assert "116 123" in pl and "800 70 2222" in pl
     assert crisis_response(country="UK") == crisis_response(country="GB")
-    unknown = crisis_response(country="ZZ")
-    assert "7333" in unknown  # falls back to UA
+    unknown = crisis_response(country="FR")
+    assert "7333" not in unknown  # a Ukrainian short number can't be dialled from France
+    assert "112" in unknown and "findahelpline.com" in unknown
 
 
 def test_country_from_env_file_reaches_the_response(tmp_path, monkeypatch):

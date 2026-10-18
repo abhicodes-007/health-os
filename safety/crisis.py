@@ -39,7 +39,9 @@ def is_crisis(text: str | None) -> bool:
 
 
 # Per-country crisis lines (no network, no model). Every label is checked against the official
-# source next to it — this text is shown to someone in crisis. Unknown codes fall back to UA.
+# source next to it — this text is shown to someone in crisis. Unset → UA (the original
+# behaviour); a country we have no line for gets the local emergency number and an international
+# directory, never another country's short number (7333 can't be dialled from abroad).
 _HOTLINES = {
     # lifeline.org.ua — national suicide-prevention line, free from any operator, 24/7
     "UA": {
@@ -74,13 +76,18 @@ _HOTLINES = {
     },
 }
 _ALIASES = {"UK": "GB"}
+_UNKNOWN_COUNTRY = {
+    # findahelpline.com — international directory of crisis lines (ThroughLine)
+    "label": "Find a crisis line in your country — findahelpline.com",
+    "emergency": "your local emergency number (112 across the EU)",
+}
 
 
 def _country_hotlines(country: str | None = None) -> dict:
     from core.config import settings  # read through Settings: .env does not reach os.environ
 
     code = (country or settings.crisis_country or "UA").strip().upper()
-    return _HOTLINES.get(_ALIASES.get(code, code), _HOTLINES["UA"])
+    return _HOTLINES.get(_ALIASES.get(code, code), _UNKNOWN_COUNTRY)
 
 
 def crisis_response(emergency_contact: str | None = None, country: str | None = None) -> str:
