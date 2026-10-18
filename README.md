@@ -38,8 +38,8 @@ Only Docker needed. Starts a throwaway database with a fictional patient — two
 (LDL creeping up), blood pressure, medications, a food log and a lab panel awaiting approval:
 
 ```bash
-git clone https://github.com/andronaft/health-os && cd health-os/demo
-docker compose up -d --build
+git clone https://github.com/andronaft/health-os && cd health-os
+make demo                             # or: cd demo && docker compose up -d --build
 ```
 
 Point your MCP client at it:
@@ -59,7 +59,7 @@ Point your MCP client at it:
 ```
 
 Ask *"show my health summary"*, *"is my LDL trending up?"*, *"what's pending review?"*,
-*"what am I short on nutritionally?"*. Remove it all with `docker compose down -v`.
+*"what am I short on nutritionally?"*. Remove it all with `make demo-down`.
 
 ## Install for your own data
 
@@ -73,9 +73,6 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/alembic upgrade head        # schema
 .venv/bin/python -m seed.load         # marker catalog, synonyms, units, nutrients
 .venv/bin/python -m seed.demo         # optional: a fictional demo patient to play with
-
-# or, one command after docker is available:
-make demo                              # db up + migrations + catalog + demo patient
 ```
 
 Then connect an MCP client — config for LM Studio, Open WebUI, Ollama CLI and Claude is in

@@ -1,15 +1,18 @@
-.PHONY: start stop restart logs demo test test-unit test-integration lint
+.PHONY: start stop restart logs demo demo-down test test-unit test-integration lint
 
 start:
 	@docker compose up -d
 
-# One-command demo database: db up, migrations, catalog seed, fictional patient.
-# seed.demo refuses a non-empty DB — run `make stop` first if you need a clean slate.
+# One-command demo: a throwaway database with a fictional patient (demo/docker-compose.yml).
+# Its own compose project and volume — never the database of `make start`. `run` waits for the
+# db healthcheck before migrating; re-running keeps the existing demo data.
 demo:
-	@docker compose up -d db
-	@uv run alembic upgrade head
-	@uv run python -m seed.load
-	@uv run python -m seed.demo
+	@cd demo && docker compose build init && docker compose run --rm init
+	@echo "Demo ready. MCP client config: README.md → "Try it in one command". Remove: make demo-down"
+
+# Deletes the demo database only (its own volume); your own data is not touched.
+demo-down:
+	@cd demo && docker compose down -v
 
 stop:
 	@docker compose down

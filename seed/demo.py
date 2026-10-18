@@ -94,11 +94,7 @@ def is_empty(conn) -> bool:
 def load_demo(conn, *, today: date | None = None) -> str:
     """Fill an empty database with the demo patient. Returns user_id."""
     if not is_empty(conn):
-        raise SystemExit(
-            "Demo patient not loaded: the database already has a profile or observations.\n"
-            "seed.demo only fills an empty database. For a clean demo run `make stop` then "
-            "`make demo`, or point DATABASE_URL at a fresh database."
-        ) if False else RuntimeError("database already has a profile or observations — "
+        raise RuntimeError("database already has a profile or observations — "
                            "the demo only loads into a fresh database")
     today = today or date.today()
     uid = get_or_create_user(conn)
@@ -138,8 +134,12 @@ def load_demo(conn, *, today: date | None = None) -> str:
 def main() -> None:
     from core.db import engine
 
-    with engine.begin() as conn:
-        load_demo(conn)
+    try:
+        with engine.begin() as conn:
+            load_demo(conn)
+    except RuntimeError as e:  # a CLI message, not a traceback
+        raise SystemExit(f"Demo patient not loaded: {e}. For a throwaway demo database "
+                         "run `make demo` (demo/docker-compose.yml).") from None
     print("Demo patient loaded. Connect an MCP client and ask for the health summary.")
 
 
