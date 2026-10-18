@@ -1,4 +1,6 @@
-from core.normalize import canonicalize, compute_status, normalize
+import pytest
+
+from core.normalize import canonicalize, compute_status, find_type, normalize
 
 
 # --- pure unit tests (no DB) ---
@@ -46,9 +48,16 @@ def test_identity_when_already_canonical(conn):
     nr = normalize("глюкоза", 5.2, "mmol/L", conn)
     assert nr.value_canonical == 5.2
 
-def test_es_de_pl_lab_synonyms_canonicalize():
-    from core.normalize import canonicalize
-    # Spanish / German / Polish printed names for common markers
-    assert canonicalize("Colesterol total") is not None
-    assert canonicalize("Glucosa") is not None
-    assert canonicalize("Hemoglobina") is not None
+
+@pytest.mark.parametrize("printed,code", [
+    ("Leukozyten", "leukocytes"), ("Leukocyty", "leukocytes"), ("Płytki krwi", "platelets"),
+    ("Thrombozyten", "platelets"), ("Glukoza", "glucose"), ("Kreatynina", "creatinine"),
+    ("Harnstoff", "urea"), ("Ferrytyna", "ferritin"), ("Gesamtcholesterin", "cholesterol_total"),
+    ("Cholesterol całkowity", "cholesterol_total"), ("LDL-Cholesterin", "ldl"),
+    ("HDL-Cholesterol", "hdl"), ("Triglicéridos", "triglycerides"), ("Witamina D", "vitamin_d"),
+    ("Haemoglobin", "hemoglobin"),
+    # GOT = AST, GPT = ALT (the first version of this list had them swapped)
+    ("GOT", "ast"), ("GPT", "alt"),
+])
+def test_es_de_pl_names_find_the_right_type(conn, printed, code):
+    assert find_type(printed, conn)["code"] == code
